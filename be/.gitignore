@@ -1,0 +1,19 @@
+
+# Virtual environments
+venv/
+.env
+.venv/
+ENV/
+env/
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# ignored files
+seed.py
+
+__pycache__
