@@ -11,7 +11,4 @@
 - Refresh query results
 - Connection health check
 ### Architecture Diagram
-![[Drawing 2026-06-01 16.06.46.excalidraw.png]]
-[[Drawing 2026-06-01 16.06.46.excalidraw]]
-
-	
+![][[Drawing 2026-06-01 16.06.46.excalidraw.png]]
