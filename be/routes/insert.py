@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
-from be.db import mongo_client
+from be.db import mongo_client, db
 
 router = APIRouter()
 class InsertionRequest(BaseModel):
@@ -8,10 +8,9 @@ class InsertionRequest(BaseModel):
     data: dict
 
 
-@router.post("/insert")
+@router.post("/insert", status_code=status.HTTP_201_CREATED)
 async def insert(request: InsertionRequest):
     try:
-        db = mongo_client["excel_mongo"]
         collection = db[request.collection]
         
         await collection.insert_one (
@@ -23,6 +22,6 @@ async def insert(request: InsertionRequest):
     
     except Exception as e:
         raise HTTPException (
-            status_code=501
+            status_code=501,
             detail=str(e)
         )

@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from be.db import mongo_client
 
 router = APIRouter()
@@ -11,9 +11,9 @@ async def health():
             "status": "ok"
         }
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        raise HTTPException (
+            status_code=500,
+            detail=str(e)
+        )
     
     
