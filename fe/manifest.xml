@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<OfficeApp 
-  xmlns="http://schemas.microsoft.com/office/appshere/manifest/1.1" 
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" 
-  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" 
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
   xsi:type="TaskPaneApp">
 
   <!-- Metadata -->
@@ -13,31 +13,24 @@
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="MongoDB Sync" />
   <Description DefaultValue="Query, insert, and update MongoDB databases directly from Excel." />
-  
-  <!-- Default Icons -->
   <IconUrl DefaultValue="https://localhost:8000/fe/icon-32.png" />
   <HighResolutionIconUrl DefaultValue="https://localhost:8000/fe/icon-80.png" />
+  <SupportUrl DefaultValue="https://localhost:8000" />
 
   <AppDomains>
     <AppDomain>https://localhost:8000</AppDomain>
-    <AppDomain>https://localhost:8000</AppDomain>
   </AppDomains>
 
-  <!-- Hosts -->
   <Hosts>
     <Host Name="Workbook" />
   </Hosts>
 
-  <!-- Default Settings -->
   <DefaultSettings>
     <SourceLocation DefaultValue="https://localhost:8000/fe/taskpane.html" />
-    <RequestedWidth>320</RequestedWidth>
   </DefaultSettings>
 
-  <!-- Permissions -->
   <Permissions>ReadWriteDocument</Permissions>
 
-  <!-- Version Overrides for Ribbon Button Integration -->
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
     <Hosts>
       <Host xsi:type="Workbook">
@@ -47,12 +40,12 @@
             <Description resid="GetStarted.Description"/>
             <LearnMoreUrl resid="GetStarted.LearnMoreUrl"/>
           </GetStarted>
-          
+
           <FunctionFile resid="Taskpane.Url" />
-          
+
           <ExtensionPoint xsi:type="PrimaryCommandSurface">
             <OfficeTab id="TabHome">
-              <Group id="CommandsGroup">
+              <Group id="MongoDBSyncGroup">
                 <Label resid="CommandsGroup.Label"/>
                 <Icon>
                   <bt:Image size="16" resid="Icon.16x16"/>
@@ -81,7 +74,7 @@
         </DesktopFormFactor>
       </Host>
     </Hosts>
-    
+
     <Resources>
       <bt:Images>
         <bt:Image id="Icon.16x16" DefaultValue="https://localhost:8000/fe/icon-32.png"/>
@@ -93,12 +86,12 @@
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://localhost:8000/fe/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
-        <bt:String id="GetStarted.Title" DefaultValue="MongoDB Sync Connection"/>
+        <bt:String id="GetStarted.Title" DefaultValue="MongoDB Sync"/>
         <bt:String id="CommandsGroup.Label" DefaultValue="MongoDB"/>
         <bt:String id="TaskpaneButton.Label" DefaultValue="MongoDB Sync"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="GetStarted.Description" DefaultValue="MongoDB Sync lets you edit and query MongoDB records."/>
+        <bt:String id="GetStarted.Description" DefaultValue="MongoDB Sync lets you edit and query MongoDB records directly from Excel."/>
         <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Open the MongoDB Sync Taskpane"/>
       </bt:LongStrings>
     </Resources>

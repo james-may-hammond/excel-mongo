@@ -1,5 +1,17 @@
-// Config
-const API_BASE = window.location.origin;
+// Config: everything served from https://localhost:8000 (mkcert cert trusted by WKWebView)
+const API_BASE = "https://localhost:8000";
+
+// Fetch with a timeout so we fail fast instead of hanging
+async function fetchWithTimeout(url, options = {}, timeoutMs = 6000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        return res;
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 // DOM Elements
 const connectionStatus = document.getElementById("connection-status");
@@ -44,7 +56,7 @@ async function initApp() {
 async function checkApiHealth() {
     try {
         updateStatus("checking", "Checking API...");
-        const res = await fetch(`${API_BASE}/health`);
+        const res = await fetchWithTimeout(`${API_BASE}/health`);
         const data = await res.json();
         
         if (data.status === "ok") {
@@ -58,7 +70,10 @@ async function checkApiHealth() {
         isApiOnline = false;
         updateStatus("offline", "API Offline");
         btnRun.disabled = true;
-        showError("Backend API is offline. Ensure FastAPI is running on port 8000 and MongoDB is active.");
+        const msg = err.name === "AbortError"
+            ? "Connection timed out. Make sure ./run.sh is running in your terminal."
+            : "Backend API is offline. Run ./run.sh in your terminal first.";
+        showError(msg);
     }
 }
 
@@ -70,7 +85,7 @@ async function loadCollections() {
     collectionSelect.innerHTML = '<option value="">Loading...</option>';
     
     try {
-        const res = await fetch(`${API_BASE}/collections`);
+        const res = await fetchWithTimeout(`${API_BASE}/collections`);
         const data = await res.json();
         
         if (res.ok && data.collections) {
@@ -150,7 +165,7 @@ async function runSyncAndFetch() {
         // 2. Perform Sync if sheets had records (using backend /insert and /update endpoints)
         if (syncPayload.inserts.length > 0 || syncPayload.updates.length > 0) {
             const insertPromises = syncPayload.inserts.map(async (doc) => {
-                const res = await fetch(`${API_BASE}/insert`, {
+                const res = await fetchWithTimeout(`${API_BASE}/insert`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -170,7 +185,7 @@ async function runSyncAndFetch() {
                 const docData = { ...doc };
                 delete docData._id;
 
-                const res = await fetch(`${API_BASE}/update`, {
+                const res = await fetchWithTimeout(`${API_BASE}/update`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -198,7 +213,7 @@ async function runSyncAndFetch() {
             filters = JSON.parse(queryInput.value.trim());
         }
 
-        const fetchRes = await fetch(`${API_BASE}/fetch`, {
+        const fetchRes = await fetchWithTimeout(`${API_BASE}/fetch`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

@@ -3,7 +3,6 @@ from httpx import AsyncClient
 
 @pytest.mark.asyncio
 async def test_update():
-    # Insert new record using /insert first
     insert_data = {
         "collection": "employees",
         "data": {
@@ -14,11 +13,9 @@ async def test_update():
     }
 
     async with AsyncClient() as client:
-        # 1. Insert record
         insert_response = await client.post("http://localhost:8000/insert", json=insert_data)
         assert insert_response.status_code == 201
         
-        # 2. Fetch record to get its ID
         fetch_response = await client.post("http://localhost:8000/fetch", json={
             "collection": "employees",
             "filters": {"name": "test_update_user"}
@@ -28,7 +25,6 @@ async def test_update():
         assert fetch_data["count"] >= 1
         record_id = fetch_data["data"][0]["_id"]
 
-        # 3. Update record using /update
         update_data = {
             "collection": "employees",
             "id": record_id,
@@ -42,7 +38,6 @@ async def test_update():
         assert update_response.status_code == 200
         assert update_response.json()["status"] == "success"
 
-        # 4. Fetch again to verify update
         verify_response = await client.post("http://localhost:8000/fetch", json={
             "collection": "employees",
             "filters": {"name": "test_update_user"}
