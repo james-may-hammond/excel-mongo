@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MongoDB Sync Connector</title>
+    <!-- Modern Google Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Main Style Sheet -->
+    <link rel="stylesheet" href="taskpane.css">
+    <!-- Office JS SDK -->
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" type="text/javascript"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <span class="logo-icon">🍃</span>
+                <h1>MongoDB Sync</h1>
+            </div>
+            <div id="connection-status" class="status-badge checking">
+                <span class="pulse-dot"></span>
+                <span class="status-text">Checking API...</span>
+            </div>
+        </header>
+
+        <!-- Main Body -->
+        <main class="app-body">
+            <!-- Form Group: Collection Selection -->
+            <div class="form-group">
+                <label for="collection-select">Select Collection</label>
+                <div class="select-wrapper">
+                    <select id="collection-select" disabled>
+                        <option value="">Loading collections...</option>
+                    </select>
+                    <button id="btn-refresh-collections" class="btn-icon" title="Refresh Collections">
+                        🔄
+                    </button>
+                </div>
+            </div>
+
+            <!-- Form Group: Filter Query -->
+            <div class="form-group">
+                <div class="label-row">
+                    <label for="query-input">Query (MongoDB Filter JSON)</label>
+                    <span id="json-validity" class="validity-indicator empty">Empty (Fetch All)</span>
+                </div>
+                <textarea 
+                    id="query-input" 
+                    placeholder='e.g., { "status": "active", "age": { "$gt": 25 } }'
+                    spellcheck="false"
+                ></textarea>
+            </div>
+
+            <!-- Action Button -->
+            <button id="btn-run" class="btn-primary" disabled>
+                <span class="btn-text">Sync & Fetch Data</span>
+                <span class="btn-spinner hidden"></span>
+            </button>
+
+            <!-- Feedback / Messages -->
+            <div id="feedback-panel" class="feedback-panel hidden">
+                <div class="feedback-title">Sync Results</div>
+                <div class="feedback-stats">
+                    <div class="stat-card">
+                        <span class="stat-num" id="stat-fetched">0</span>
+                        <span class="stat-label">Fetched</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-num" id="stat-inserted">0</span>
+                        <span class="stat-label">Inserted</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-num" id="stat-updated">0</span>
+                        <span class="stat-label">Updated</span>
+                    </div>
+                </div>
+                <div id="feedback-message" class="feedback-message"></div>
+            </div>
+
+            <!-- Guidelines / Help Panel -->
+            <details class="help-details">
+                <summary>How to use this Add-in</summary>
+                <div class="help-content">
+                    <p><strong>1. Fetching Data:</strong> Select a collection, enter a JSON filter query (or leave empty for all), and click <strong>Sync & Fetch Data</strong>.</p>
+                    <p><strong>2. Inserting Data:</strong> To insert new records, append them as new rows at the bottom of the table in your worksheet. Leave the <code>_id</code> cell empty.</p>
+                    <p><strong>3. Updating Data:</strong> Modify cells in rows that have an <code>_id</code> value. Clicking <strong>Sync & Fetch Data</strong> will push those edits back to MongoDB.</p>
+                    <p><strong>4. Filter Queries:</strong> Standard MongoDB query filter format only, e.g. <code>{"age": {"$gte": 30}}</code>.</p>
+                </div>
+            </details>
+        </main>
+        
+        <!-- Footer -->
+        <footer class="app-footer">
+            Excel-MongoDB Connector v1.0.0
+        </footer>
+    </div>
+</body>
+</html>
