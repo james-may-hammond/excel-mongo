@@ -36,28 +36,66 @@
                     <select id="collection-select" disabled>
                         <option value="">Loading collections...</option>
                     </select>
+                    <button id="btn-import-schema" class="btn-schema" disabled title="Import Schema from MongoDB">
+                        &#x2B07; Schema
+                    </button>
                     <button id="btn-refresh-collections" class="btn-icon" title="Refresh Collections">
-                        🔄
+                        &#x1F504;
                     </button>
                 </div>
             </div>
 
-            <!-- Form Group: Filter Query -->
-            <div class="form-group">
+            <!-- Schema Indicator Bar -->
+            <div id="schema-bar" class="schema-bar hidden">
+                <span class="schema-bar-label">Schema</span>
+                <div id="schema-bar-fields" class="schema-bar-fields"></div>
+            </div>
+
+            <!-- Form Group: Filter Query (tabbed) -->
+            <div class="form-group" id="query-group">
                 <div class="label-row">
-                    <label for="query-input">Query (MongoDB Filter JSON)</label>
-                    <span id="json-validity" class="validity-indicator empty">Empty (Fetch All)</span>
+                    <label>Query Filter</label>
+                    <div class="query-mode-tabs">
+                        <button id="tab-builder" class="tab-btn active">&#x26A1; Builder</button>
+                        <button id="tab-json"    class="tab-btn">{ } JSON</button>
+                    </div>
                 </div>
-                <textarea 
-                    id="query-input" 
-                    placeholder='e.g., { "status": "active", "age": { "$gt": 25 } }'
-                    spellcheck="false"
-                ></textarea>
+
+                <!-- GUI Builder Panel -->
+                <div id="builder-panel">
+                    <div class="builder-header">
+                        <span class="logic-label">Match</span>
+                        <div class="logic-toggle">
+                            <button id="btn-logic-and" class="logic-btn active">ALL (AND)</button>
+                            <button id="btn-logic-or"  class="logic-btn">ANY (OR)</button>
+                        </div>
+                        <span id="condition-count" class="condition-count">fetch all</span>
+                    </div>
+                    <div id="conditions-list"></div>
+                    <button id="btn-add-condition" class="btn-add-cond">&#xFF0B; Add Condition</button>
+                    <details class="query-preview">
+                        <summary>Preview JSON</summary>
+                        <pre id="query-preview-code">{}</pre>
+                    </details>
+                </div>
+
+                <!-- Raw JSON Panel -->
+                <div id="json-panel" class="hidden">
+                    <div class="label-row" style="margin-bottom:4px">
+                        <span style="font-size:11px;color:var(--color-text-muted)">Raw MongoDB filter</span>
+                        <span id="json-validity" class="validity-indicator empty">Empty (Fetch All)</span>
+                    </div>
+                    <textarea
+                        id="query-input"
+                        placeholder='e.g., { "status": "active", "age": { "$gt": 25 } }'
+                        spellcheck="false"
+                    ></textarea>
+                </div>
             </div>
 
             <!-- Action Button -->
             <button id="btn-run" class="btn-primary" disabled>
-                <span class="btn-text">Sync & Fetch Data</span>
+                <span class="btn-text">Sync &amp; Fetch Data</span>
                 <span class="btn-spinner hidden"></span>
             </button>
 
@@ -85,14 +123,14 @@
             <details class="help-details">
                 <summary>How to use this Add-in</summary>
                 <div class="help-content">
-                    <p><strong>1. Fetching Data:</strong> Select a collection, enter a JSON filter query (or leave empty for all), and click <strong>Sync & Fetch Data</strong>.</p>
-                    <p><strong>2. Inserting Data:</strong> To insert new records, append them as new rows at the bottom of the table in your worksheet. Leave the <code>_id</code> cell empty.</p>
-                    <p><strong>3. Updating Data:</strong> Modify cells in rows that have an <code>_id</code> value. Clicking <strong>Sync & Fetch Data</strong> will push those edits back to MongoDB.</p>
-                    <p><strong>4. Filter Queries:</strong> Standard MongoDB query filter format only, e.g. <code>{"age": {"$gte": 30}}</code>.</p>
+                    <p><strong>1. Fetching:</strong> Select a collection, build a filter (or leave empty for all), click <strong>Sync &amp; Fetch</strong>.</p>
+                    <p><strong>2. Inserting:</strong> Import schema first via <strong>&#x2B07; Schema</strong>, then add rows below the headers.</p>
+                    <p><strong>3. Updating:</strong> Modify cells in rows that have an <code>_id</code>. Sync pushes edits to MongoDB.</p>
+                    <p><strong>4. Builder vs JSON:</strong> Builder generates the filter visually. Switch to JSON to hand-write complex queries.</p>
                 </div>
             </details>
         </main>
-        
+
         <!-- Footer -->
         <footer class="app-footer">
             Excel-MongoDB Connector v1.0.0

@@ -17,6 +17,9 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 6000) {
 const connectionStatus = document.getElementById("connection-status");
 const collectionSelect = document.getElementById("collection-select");
 const btnRefreshCollections = document.getElementById("btn-refresh-collections");
+const btnImportSchema = document.getElementById("btn-import-schema");
+const schemaBar = document.getElementById("schema-bar");
+const schemaBarFields = document.getElementById("schema-bar-fields");
 const queryInput = document.getElementById("query-input");
 const jsonValidity = document.getElementById("json-validity");
 const btnRun = document.getElementById("btn-run");
@@ -30,6 +33,26 @@ const statUpdated = document.getElementById("stat-updated");
 
 // State
 let isApiOnline = false;
+let currentSchema = []; // field names currently in the sheet's row 1
+
+// ── Query Builder State ──
+let guiLogic = 'and';       // 'and' | 'or'
+let conditionCounter = 0;   // unique ID for each row
+
+const GUI_OPERATORS = [
+    { label: '=  equals',         value: 'eq',      hasValue: true  },
+    { label: '\u2260  not equals',  value: 'ne',      hasValue: true  },
+    { label: '>  greater than',   value: 'gt',      hasValue: true  },
+    { label: '\u2265  greater or =', value: 'gte',   hasValue: true  },
+    { label: '<  less than',      value: 'lt',      hasValue: true  },
+    { label: '\u2264  less or =',    value: 'lte',   hasValue: true  },
+    { label: '~  contains',       value: 'regex',   hasValue: true  },
+    { label: '^  starts with',    value: 'starts',  hasValue: true  },
+    { label: '\u2208  in (a,b,c)', value: 'in',      hasValue: true  },
+    { label: '\u2209  not in',     value: 'nin',     hasValue: true  },
+    { label: '\u2713  exists',     value: 'exists',  hasValue: false },
+    { label: '\u2717  not exists', value: 'nexists', hasValue: false },
+];
 
 // Initialize Add-in
 Office.onReady((info) => {
@@ -40,16 +63,28 @@ Office.onReady((info) => {
 
 // App Initialization
 async function initApp() {
-    // Setup event listeners
-    btnRefreshCollections.addEventListener("click", loadCollections);
-    queryInput.addEventListener("input", validateQuerySyntax);
-    btnRun.addEventListener("click", runSyncAndFetch);
+    // Collection controls
+    btnRefreshCollections.addEventListener('click', loadCollections);
+    btnImportSchema.addEventListener('click', importSchema);
+    collectionSelect.addEventListener('change', onCollectionChange);
 
-    // Initial check and load
+    // Query builder controls
+    document.getElementById('tab-builder').addEventListener('click', () => switchQueryMode('builder'));
+    document.getElementById('tab-json').addEventListener('click',    () => switchQueryMode('json'));
+    document.getElementById('btn-add-condition').addEventListener('click', handleAddCondition);
+    document.getElementById('btn-logic-and').addEventListener('click', () => setGuiLogic('and'));
+    document.getElementById('btn-logic-or').addEventListener('click',  () => setGuiLogic('or'));
+
+    // JSON textarea
+    queryInput.addEventListener('input', validateQuerySyntax);
+
+    // Main button
+    btnRun.addEventListener('click', runSyncAndFetch);
+
+    // Boot sequence
     await checkApiHealth();
-    if (isApiOnline) {
-        await loadCollections();
-    }
+    if (isApiOnline) await loadCollections();
+    await refreshSchemaBar();
 }
 
 // Check if FastAPI is running and connected to MongoDB
@@ -82,6 +117,7 @@ async function loadCollections() {
     if (!isApiOnline) return;
     
     collectionSelect.disabled = true;
+    btnImportSchema.disabled = true;
     collectionSelect.innerHTML = '<option value="">Loading...</option>';
     
     try {
@@ -100,6 +136,7 @@ async function loadCollections() {
                     collectionSelect.appendChild(opt);
                 });
                 collectionSelect.disabled = false;
+                btnImportSchema.disabled = false;
             }
         } else {
             throw new Error(data.detail || "Failed to load collections");
@@ -108,6 +145,13 @@ async function loadCollections() {
         showError("Failed to fetch MongoDB collections: " + err.message);
         collectionSelect.innerHTML = '<option value="">Error loading collections</option>';
     }
+}
+
+// Called when the user switches collection — re-read schema from sheet
+function onCollectionChange() {
+    // Schema bar stays showing whatever is in the sheet.
+    // User must click Import Schema or run a Fetch to update it.
+    refreshSchemaBar();
 }
 
 // Real-time JSON validation
@@ -158,6 +202,17 @@ async function runSyncAndFetch() {
         // 1. Read sheet data to prepare inserts/updates
         const rawSheetData = await getSheetData();
         const syncPayload = parseSheetData(rawSheetData);
+
+        // Guard: if there are new rows to insert but no schema in row 1, block it
+        if (syncPayload.inserts.length > 0 && currentSchema.length === 0) {
+            showError(
+                "Cannot insert: no schema found in the sheet. " +
+                "Click '⬇ Schema' to import the collection's schema first, " +
+                "or run a Sync & Fetch to load existing data."
+            );
+            setLoading(false);
+            return;
+        }
         
         let inserted = 0;
         let updated = 0;
@@ -232,7 +287,10 @@ async function runSyncAndFetch() {
         // 4. Overwrite worksheet with fetched records
         await writeDataToSheet(records);
 
-        // 5. Present statistics
+        // 5. Refresh schema bar to show updated headers
+        await refreshSchemaBar();
+
+        // 6. Present statistics
         showSuccess(
             records.length > 0 
                 ? `Sync process complete! Loaded ${records.length} records into the sheet.`
@@ -372,7 +430,7 @@ async function writeDataToSheet(records) {
 
         // Header styles (MongoDB Dark Green theme)
         const headerRange = sheet.getRangeByIndexes(0, 0, 1, colCount);
-        headerRange.format.fill.color = "#13AA52";
+        headerRange.format.fill.color = "#5BAD7F";
         headerRange.format.font.color = "#FFFFFF";
         headerRange.format.font.bold = true;
 
@@ -381,6 +439,335 @@ async function writeDataToSheet(records) {
 
         await context.sync();
     });
+}
+
+// --- Schema Functions ---
+
+/**
+ * Reads row 1 of the active sheet and returns the field headers found.
+ * Returns [] if the sheet is empty or has no headers.
+ */
+async function detectSheetSchema() {
+    return await Excel.run(async (context) => {
+        const sheet = context.workbook.worksheets.getActiveWorksheet();
+        const usedRange = sheet.getUsedRange();
+        usedRange.load(["values", "rowCount"]);
+        try {
+            await context.sync();
+            if (!usedRange.values || usedRange.values.length === 0) return [];
+            // Row 1 is the header row
+            const headers = usedRange.values[0].filter(h => h !== null && h !== "");
+            return headers.map(String);
+        } catch {
+            return [];
+        }
+    });
+}
+
+/**
+ * Reads the sheet schema and renders the schema bar.
+ * Also refreshes any condition field selectors.
+ */
+async function refreshSchemaBar() {
+    const fields = await detectSheetSchema();
+    currentSchema = fields;
+    renderSchemaBar(fields);
+    refreshConditionFields();
+}
+
+/**
+ * Renders the schema field tags inside the schema bar.
+ */
+function renderSchemaBar(fields) {
+    if (!fields || fields.length === 0) {
+        schemaBar.classList.add("hidden");
+        return;
+    }
+    schemaBarFields.innerHTML = "";
+    fields.forEach(f => {
+        const tag = document.createElement("span");
+        tag.className = "schema-field-tag" + (f === "_id" ? " id-field" : "");
+        tag.textContent = f;
+        schemaBarFields.appendChild(tag);
+    });
+    schemaBar.classList.remove("hidden");
+}
+
+/**
+ * Fetches the schema from MongoDB and writes headers to row 1 of the sheet.
+ * Blocked if no collection is selected.
+ */
+async function importSchema() {
+    const collection = collectionSelect.value;
+    if (!collection) {
+        showError("Select a collection before importing schema.");
+        return;
+    }
+
+    btnImportSchema.disabled = true;
+    btnImportSchema.textContent = "Loading...";
+    hideFeedback();
+
+    try {
+        const res = await fetchWithTimeout(`${API_BASE}/schema?collection=${encodeURIComponent(collection)}`);
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.detail || "Schema fetch failed");
+        if (!data.fields || data.fields.length === 0) {
+            showError(data.message || "Collection is empty — no schema could be inferred.");
+            return;
+        }
+
+        // Write headers to the sheet
+        await writeSchemaToSheet(data.fields);
+        await refreshSchemaBar();
+
+        showSuccess(
+            `Schema imported: ${data.fields.length} fields from ${data.sampled} sample document(s). ` +
+            `Add new rows below the headers and click Sync & Fetch Data to insert them.`,
+            0, 0, 0
+        );
+    } catch (err) {
+        showError("Schema import failed: " + err.message);
+    } finally {
+        btnImportSchema.disabled = false;
+        btnImportSchema.innerHTML = "⬇ Schema";
+    }
+}
+
+/**
+ * Writes field names as styled headers to row 1 without touching data rows.
+ */
+async function writeSchemaToSheet(fields) {
+    await Excel.run(async (context) => {
+        const sheet = context.workbook.worksheets.getActiveWorksheet();
+
+        // Only clear row 1 header (don't wipe existing data rows)
+        const headerRange = sheet.getRangeByIndexes(0, 0, 1, fields.length);
+        headerRange.values = [fields];
+        headerRange.format.fill.color = "#13AA52";
+        headerRange.format.font.color = "#FFFFFF";
+        headerRange.format.font.bold = true;
+        headerRange.format.autofitColumns();
+
+        await context.sync();
+    });
+}
+
+// ============================================================
+// GUI QUERY BUILDER
+// ============================================================
+
+/**
+ * Called when user clicks ＋ Add Condition.
+ * Auto-fetches schema first if none is loaded, so the field is always a dropdown.
+ */
+async function handleAddCondition() {
+    const btn = document.getElementById('btn-add-condition');
+
+    // If schema is already known, just add the row immediately
+    if (currentSchema.filter(f => f !== '_id').length > 0) {
+        addCondition();
+        return;
+    }
+
+    // No schema yet — try to fetch it silently from the selected collection
+    const collection = collectionSelect.value;
+    if (!collection) {
+        showError('Select a collection first so we can load its fields.');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Loading fields...';
+
+    try {
+        const res  = await fetchWithTimeout(`${API_BASE}/schema?collection=${encodeURIComponent(collection)}`);
+        const data = await res.json();
+        if (res.ok && data.fields && data.fields.length > 0) {
+            currentSchema = data.fields;
+            renderSchemaBar(data.fields);
+        }
+    } catch (_) {
+        // Silently fall back — addCondition will use free-text if schema still empty
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '&#xFF0B; Add Condition';
+    }
+
+    addCondition();
+}
+
+/** Switch between 'builder' and 'json' tabs */
+function switchQueryMode(mode) {
+    const builderPanel = document.getElementById('builder-panel');
+    const jsonPanel    = document.getElementById('json-panel');
+    const tabBuilder   = document.getElementById('tab-builder');
+    const tabJson      = document.getElementById('tab-json');
+
+    if (mode === 'builder') {
+        builderPanel.classList.remove('hidden');
+        jsonPanel.classList.add('hidden');
+        tabBuilder.classList.add('active');
+        tabJson.classList.remove('active');
+        updateQueryFromGui(); // keep JSON in sync
+    } else {
+        builderPanel.classList.add('hidden');
+        jsonPanel.classList.remove('hidden');
+        tabBuilder.classList.remove('active');
+        tabJson.classList.add('active');
+    }
+}
+
+/** Toggle AND / OR logic */
+function setGuiLogic(logic) {
+    guiLogic = logic;
+    document.getElementById('btn-logic-and').classList.toggle('active', logic === 'and');
+    document.getElementById('btn-logic-or').classList.toggle('active',  logic === 'or');
+    updateQueryFromGui();
+}
+
+/** Add a new condition row to the builder */
+function addCondition(field = '', op = 'eq', value = '') {
+    const id = ++conditionCounter;
+    const row = document.createElement('div');
+    row.className = 'condition-row';
+    row.dataset.id = id;
+
+    // Field: dropdown if schema known, else free-text input
+    let fieldHtml;
+    const schemaFields = currentSchema.filter(f => f !== '_id');
+    if (schemaFields.length > 0) {
+        const opts = schemaFields
+            .map(f => `<option value="${f}"${f === field ? ' selected' : ''}>${f}</option>`)
+            .join('');
+        fieldHtml = `<select class="cond-field cond-select">${opts}</select>`;
+    } else {
+        fieldHtml = `<input class="cond-field cond-input" type="text" placeholder="field" value="${field}">`;
+    }
+
+    // Operator dropdown
+    const opOpts = GUI_OPERATORS
+        .map(o => `<option value="${o.value}"${o.value === op ? ' selected' : ''}>${o.label}</option>`)
+        .join('');
+
+    const selectedOp = GUI_OPERATORS.find(o => o.value === op);
+    const hideValue  = selectedOp && !selectedOp.hasValue ? 'hidden' : '';
+
+    row.innerHTML = `
+        ${fieldHtml}
+        <select class="cond-op cond-select">${opOpts}</select>
+        <input  class="cond-value cond-input ${hideValue}" type="text" placeholder="value" value="${value}">
+        <button class="btn-remove-cond" title="Remove">&#x2715;</button>
+    `;
+
+    // Operator change: toggle value input visibility
+    row.querySelector('.cond-op').addEventListener('change', e => {
+        const def = GUI_OPERATORS.find(o => o.value === e.target.value);
+        row.querySelector('.cond-value').classList.toggle('hidden', !def.hasValue);
+        updateQueryFromGui();
+    });
+    row.querySelector('.btn-remove-cond').addEventListener('click', () => {
+        row.remove();
+        _updateConditionCount();
+        updateQueryFromGui();
+    });
+    row.querySelector('.cond-field').addEventListener('change', updateQueryFromGui);
+    row.querySelector('.cond-field').addEventListener('input',  updateQueryFromGui);
+    row.querySelector('.cond-value').addEventListener('input',  updateQueryFromGui);
+
+    document.getElementById('conditions-list').appendChild(row);
+    _updateConditionCount();
+    updateQueryFromGui();
+}
+
+/** Update the condition count label */
+function _updateConditionCount() {
+    const n = document.getElementById('conditions-list').children.length;
+    const el = document.getElementById('condition-count');
+    el.textContent = n === 0 ? 'fetch all' : n === 1 ? '1 condition' : `${n} conditions`;
+}
+
+/** Rebuild GUI filter to a MongoDB query object */
+function buildGuiQuery() {
+    const rows = document.querySelectorAll('.condition-row');
+    if (rows.length === 0) return {};
+
+    const parseVal = v => {
+        if (v === 'true')  return true;
+        if (v === 'false') return false;
+        const n = Number(v);
+        return (!isNaN(n) && v !== '') ? n : v;
+    };
+
+    const conditions = [];
+    rows.forEach(row => {
+        const field = row.querySelector('.cond-field').value.trim();
+        const op    = row.querySelector('.cond-op').value;
+        const raw   = (row.querySelector('.cond-value').value || '').trim();
+        if (!field) return;
+
+        let cond = {};
+        switch (op) {
+            case 'eq':      cond = { [field]: parseVal(raw) }; break;
+            case 'ne':      cond = { [field]: { $ne:  parseVal(raw) } }; break;
+            case 'gt':      cond = { [field]: { $gt:  parseVal(raw) } }; break;
+            case 'gte':     cond = { [field]: { $gte: parseVal(raw) } }; break;
+            case 'lt':      cond = { [field]: { $lt:  parseVal(raw) } }; break;
+            case 'lte':     cond = { [field]: { $lte: parseVal(raw) } }; break;
+            case 'regex':   cond = { [field]: { $regex: raw, $options: 'i' } }; break;
+            case 'starts':  cond = { [field]: { $regex: `^${raw}`, $options: 'i' } }; break;
+            case 'in':      cond = { [field]: { $in:  raw.split(',').map(v => parseVal(v.trim())) } }; break;
+            case 'nin':     cond = { [field]: { $nin: raw.split(',').map(v => parseVal(v.trim())) } }; break;
+            case 'exists':  cond = { [field]: { $exists: true  } }; break;
+            case 'nexists': cond = { [field]: { $exists: false } }; break;
+        }
+        conditions.push(cond);
+    });
+
+    if (conditions.length === 0) return {};
+    if (conditions.length === 1) return conditions[0];
+    return guiLogic === 'and' ? { $and: conditions } : { $or: conditions };
+}
+
+/** Sync GUI → queryInput textarea + JSON preview */
+function updateQueryFromGui() {
+    const query   = buildGuiQuery();
+    const isEmpty = Object.keys(query).length === 0;
+    const pretty  = isEmpty ? '' : JSON.stringify(query, null, 2);
+
+    queryInput.value = pretty;
+    document.getElementById('query-preview-code').textContent = isEmpty ? '{}  // fetch all' : pretty;
+    validateQuerySyntax();
+}
+
+/** When schema updates, rebuild condition field dropdowns in-place */
+function refreshConditionFields() {
+    const schemaFields = currentSchema.filter(f => f !== '_id');
+    if (schemaFields.length === 0) return;
+    document.querySelectorAll('.condition-row').forEach(row => {
+        const fieldEl = row.querySelector('.cond-field');
+        if (fieldEl.tagName === 'INPUT') {
+            // Replace free-text with dropdown now that we have schema
+            const cur  = fieldEl.value;
+            const opts = schemaFields
+                .map(f => `<option value="${f}"${f === cur ? ' selected' : ''}>${f}</option>`)
+                .join('');
+            const sel  = document.createElement('select');
+            sel.className = 'cond-field cond-select';
+            sel.innerHTML = opts;
+            sel.addEventListener('change', updateQueryFromGui);
+            fieldEl.replaceWith(sel);
+        } else {
+            // Already a select — update options keeping current selection
+            const cur  = fieldEl.value;
+            const opts = schemaFields
+                .map(f => `<option value="${f}"${f === cur ? ' selected' : ''}>${f}</option>`)
+                .join('');
+            fieldEl.innerHTML = opts;
+        }
+    });
+    updateQueryFromGui();
 }
 
 // --- Helpers ---

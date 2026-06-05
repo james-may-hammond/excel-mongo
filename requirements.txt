@@ -1,0 +1,16 @@
+# Core API
+fastapi==0.136.3
+uvicorn==0.48.0
+python-dotenv==1.2.2
+
+# MongoDB async driver
+motor==3.7.1
+pymongo==4.17.0
+dnspython==2.8.0
+
+# Data validation
+pydantic==2.13.4
+
+# HTTP (used by FastAPI internally)
+httpx==0.28.1
+starlette==1.2.1
