@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from be.routes.health import router as health_router
 from be.routes.insert import router as insertion_router
 from be.routes.collections import router as collections_router
@@ -11,6 +12,8 @@ from be.routes.stream_fetch import router as stream_fetch_router
 from be.routes.bulk import router as bulk_router
 from be.routes.delete import router as delete_router
 from be.routes.create import router as create_router
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
 
 app = FastAPI(
     title="excel-mongo connector",
@@ -37,7 +40,7 @@ app.include_router(bulk_router)
 app.include_router(delete_router)
 app.include_router(create_router)
 # Serve the static files for the Excel Task Pane GUI
-app.mount("/fe", StaticFiles(directory="fe"), name="fe")
+app.mount("/fe", StaticFiles(directory=ROOT_DIR / "fe"), name="fe")
 
 @app.get("/")
 async def root():
@@ -45,4 +48,3 @@ async def root():
         "service": "excel-mongo connector",
         "status": "running"
     }
-

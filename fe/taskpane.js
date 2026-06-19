@@ -1,5 +1,5 @@
-// Config: everything served from https://localhost:8000 (mkcert cert trusted by WKWebView)
-const API_BASE = "https://localhost:8000";
+// Local dev uses fe/config.js. Production builds generate this value from ADDIN_API_BASE.
+const API_BASE = (window.EXCEL_MONGO_CONFIG && window.EXCEL_MONGO_CONFIG.apiBase) || window.location.origin;
 
 let currentMongoUri = "";
 let currentMongoDb = "";

@@ -7,7 +7,13 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start:addin": "office-addin-debugging start fe/manifest.xml --no-debug --dev-server-port 8000",
+    "stop:addin": "office-addin-debugging stop fe/manifest.xml",
+    "validate:dev": "office-addin-manifest validate fe/manifest.xml",
+    "validate:dist": "office-addin-manifest validate dist/manifest.xml",
+    "package": "node scripts/build-package.js",
+    "package:validate": "npm run package && npm run validate:dist",
+    "test": "echo \"No automated test command configured yet\""
   },
   "repository": {
     "type": "git",
