@@ -1,0 +1,1586 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>MongoDB Sync Sidebar</title>
+    <!-- Office JS SDK -->
+    
+
+    <!-- Tailwind & Fonts -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@500;600;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <!-- Link to our CSS for the JS-generated dynamic rows -->
+    <style>/* --- Design System Variables --- */
+:root {
+    /* Backgrounds: near-black with a very slight purplish-grey tint */
+    --bg-main:        #0C0A14;
+    --bg-card:        #13101E;
+    --bg-input:       #1B1728;
+    --bg-input-focus: #221E32;
+
+    /* Brand palette */
+    --color-primary:       #FFD300;   /* Gold / signal yellow */
+    --color-primary-hover: #E6BE00;
+    --color-green:         #5BAD7F;   /* Nature sage-green */
+    --color-green-dim:     rgba(91, 173, 127, 0.15);
+
+    /* Text */
+    --color-text-main:  #F2F0FF;    /* Cool white with whisper of purple */
+    --color-text-muted: #8A879E;
+
+    /* Borders */
+    --color-border:     #2A2440;
+
+    /* Semantic */
+    --color-success: #5BAD7F;
+    --color-error:   #E05C6E;
+    --color-warning: #FFD300;
+    --color-info:    #7B8CDE;
+
+    /* Misc */
+    --font-family:        'Outfit', sans-serif;
+    --border-radius-lg:   12px;
+    --border-radius-md:   8px;
+    --border-radius-sm:   4px;
+    --transition-speed:   0.2s;
+}
+
+/* --- Base Styles --- */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg-main);
+    color: var(--color-text-main);
+    font-family: var(--font-family);
+    font-size: 15px;
+    line-height: 1.6;
+    padding: 24px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    flex: 1;
+}
+
+/* --- Header --- */
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 20px;
+    border-bottom: 3px solid var(--color-border);
+    margin-bottom: 24px;
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.logo-icon {
+    font-size: 22px;
+}
+
+.app-header h1 {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+    color: var(--color-text-main);
+}
+
+/* --- Status Badge --- */
+.status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.status-badge.checking {
+    background-color: rgba(255, 211, 0, 0.08);
+    color: var(--color-warning);
+    border: 1px solid rgba(255, 211, 0, 0.2);
+}
+
+.status-badge.online {
+    background-color: rgba(91, 173, 127, 0.1);
+    color: var(--color-green);
+    border: 1px solid rgba(91, 173, 127, 0.25);
+}
+
+.status-badge.offline {
+    background-color: rgba(224, 92, 110, 0.1);
+    color: var(--color-error);
+    border: 1px solid rgba(224, 92, 110, 0.2);
+}
+
+.pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: currentColor;
+    flex-shrink: 0;
+}
+
+.status-badge.checking .pulse-dot,
+.status-badge.online .pulse-dot {
+    animation: pulse 1.5s infinite alternate;
+}
+
+@keyframes pulse {
+    0%   { opacity: 0.4; }
+    100% { opacity: 1; transform: scale(1.25); }
+}
+
+/* --- Form Elements --- */
+.form-group {
+    margin-bottom: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--color-text-muted);
+}
+
+.label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.select-wrapper {
+    display: flex;
+    gap: 6px;
+}
+
+select, .form-control {
+    flex: 1;
+    background-color: var(--bg-input);
+    color: var(--color-text-main);
+    border: 2px solid var(--color-border);
+    padding: 14px 16px;
+    border-radius: var(--border-radius-sm);
+    font-family: var(--font-family);
+    font-size: 14px;
+    font-weight: 600;
+    outline: none;
+    cursor: pointer;
+    box-shadow: 4px 4px 0px var(--color-border);
+    transition: all 0.1s ease;
+    margin-bottom: 4px;
+}
+
+select:focus:not(:disabled), .form-control:focus {
+    border-color: var(--color-primary);
+    background-color: var(--bg-input-focus);
+    box-shadow: 4px 4px 0px var(--color-primary);
+    transform: translate(-2px, -2px);
+}
+
+select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+textarea {
+    width: 100%;
+    height: 120px;
+    background-color: var(--bg-input);
+    color: var(--color-text-main);
+    border: 2px solid var(--color-border);
+    padding: 16px;
+    border-radius: var(--border-radius-sm);
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    font-weight: 600;
+    resize: vertical;
+    outline: none;
+    box-shadow: 4px 4px 0px var(--color-border);
+    transition: all 0.1s ease;
+    margin-bottom: 4px;
+}
+
+textarea:focus {
+    border-color: var(--color-primary);
+    background-color: var(--bg-input-focus);
+    box-shadow: 4px 4px 0px var(--color-primary);
+    transform: translate(-2px, -2px);
+}
+
+/* --- Validity Indicators --- */
+.validity-indicator {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+}
+
+.validity-indicator.empty {
+    background-color: rgba(138, 135, 158, 0.12);
+    color: var(--color-text-muted);
+}
+
+.validity-indicator.valid {
+    background-color: rgba(91, 173, 127, 0.12);
+    color: var(--color-green);
+}
+
+.validity-indicator.invalid {
+    background-color: rgba(224, 92, 110, 0.12);
+    color: var(--color-error);
+}
+
+/* --- Buttons --- */
+
+/* Icon button (refresh) */
+.btn-icon {
+    background: var(--bg-input);
+    border: 2px solid var(--color-border);
+    color: var(--color-text-main);
+    width: 52px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    font-size: 16px;
+    flex-shrink: 0;
+    transition: all 0.1s ease;
+    box-shadow: 4px 4px 0px var(--color-border);
+}
+
+.btn-icon:hover:not(:disabled) {
+    background-color: var(--bg-input-focus);
+    border-color: var(--color-primary);
+    box-shadow: 5px 5px 0px var(--color-primary);
+    transform: translate(-1px, -1px);
+}
+
+.btn-icon:active:not(:disabled) {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0px var(--color-primary);
+}
+
+.btn-icon:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+/* Import Schema button */
+.btn-schema {
+    background: var(--bg-input);
+    border: 2px solid var(--color-primary);
+    color: var(--color-primary);
+    padding: 0 16px;
+    height: 52px;
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    font-family: var(--font-family);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.1s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 4px 4px 0px var(--color-primary);
+}
+
+.btn-schema:hover:not(:disabled) {
+    background-color: rgba(255, 211, 0, 0.1);
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0px var(--color-primary);
+}
+
+.btn-schema:active:not(:disabled) {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0px var(--color-primary);
+}
+
+.btn-schema:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+/* Primary CTA */
+.btn-primary {
+    background: var(--color-primary);
+    color: #0C0A14;
+    font-weight: 900;
+    border: 2px solid var(--color-text-main);
+    padding: 16px 24px;
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    font-family: var(--font-family);
+    font-size: 15px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    margin-top: 16px;
+    margin-bottom: 8px;
+    transition: all 0.1s ease;
+    box-shadow: 5px 5px 0px var(--color-text-main);
+}
+
+.btn-primary:hover:not(:disabled) {
+    transform: translate(-2px, -2px);
+    box-shadow: 7px 7px 0px var(--color-text-main);
+}
+
+.btn-primary:active:not(:disabled) {
+    transform: translate(3px, 3px);
+    box-shadow: 2px 2px 0px var(--color-text-main);
+}
+
+.btn-primary:disabled {
+    background: var(--bg-input);
+    color: var(--color-text-muted);
+    border: 2px solid var(--color-border);
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+/* Loading Spinner */
+.btn-spinner {
+    width: 15px;
+    height: 15px;
+    border: 2px solid rgba(12, 10, 20, 0.2);
+    border-top: 2px solid #0C0A14;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* --- Schema Indicator Bar --- */
+.schema-bar {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--color-border);
+    border-top: 2px solid var(--color-green);
+    border-radius: var(--border-radius-md);
+    font-size: 11px;
+    line-height: 1.5;
+    margin-top: -8px;
+    margin-bottom: 8px;
+    animation: slideDown 0.25s ease-out;
+}
+
+.schema-bar.hidden {
+    display: none !important;
+}
+
+.schema-bar-label {
+    color: var(--color-green);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    margin-top: 2px;
+    font-size: 10px;
+}
+
+.schema-bar-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.schema-field-tag {
+    background-color: var(--color-green-dim);
+    border: 1px solid rgba(91, 173, 127, 0.25);
+    color: var(--color-green);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+}
+
+.schema-field-tag.id-field {
+    background-color: rgba(255, 211, 0, 0.07);
+    border-color: rgba(255, 211, 0, 0.25);
+    color: var(--color-primary);
+}
+
+/* --- Feedback Panel --- */
+.feedback-panel {
+    margin-top: 20px;
+    background-color: var(--bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-lg);
+    padding: 16px;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.feedback-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--color-text-muted);
+    margin-bottom: 12px;
+}
+
+.feedback-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.stat-card {
+    background-color: var(--bg-input);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    padding: 10px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.stat-num {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--color-primary);
+}
+
+.stat-label {
+    font-size: 10px;
+    color: var(--color-text-muted);
+    margin-top: 2px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.feedback-message {
+    padding: 10px 12px;
+    border-radius: var(--border-radius-md);
+    font-size: 12px;
+    border-left: 3px solid var(--color-info);
+    background-color: rgba(123, 140, 222, 0.07);
+    color: var(--color-text-main);
+    line-height: 1.6;
+}
+
+.feedback-message.success {
+    border-left-color: var(--color-green);
+    background-color: var(--color-green-dim);
+}
+
+.feedback-message.error {
+    border-left-color: var(--color-error);
+    background-color: rgba(224, 92, 110, 0.08);
+    color: #F09099;
+}
+
+/* --- Details / Help --- */
+.help-details {
+    margin-top: 20px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-lg);
+    background-color: rgba(19, 16, 30, 0.6);
+    overflow: hidden;
+}
+
+summary {
+    padding: 12px 16px;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    outline: none;
+    transition: color var(--transition-speed);
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+summary::before {
+    content: '▸';
+    font-size: 10px;
+    transition: transform 0.2s;
+}
+
+details[open] summary::before {
+    transform: rotate(90deg);
+}
+
+summary:hover {
+    color: var(--color-text-main);
+}
+
+.help-content {
+    padding: 0 16px 14px 16px;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+}
+
+.help-content p {
+    margin-top: 8px;
+}
+
+.help-content strong {
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+.help-content code {
+    background-color: var(--bg-input);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--color-green);
+    font-family: 'Courier New', monospace;
+}
+
+/* --- Footer --- */
+.app-footer {
+    margin-top: auto;
+    padding-top: 20px;
+    font-size: 10px;
+    color: var(--color-text-muted);
+    text-align: center;
+    opacity: 0.4;
+    letter-spacing: 0.3px;
+}
+
+/* ============================================
+   QUERY BUILDER
+   ============================================ */
+
+/* Mode tab switcher */
+.query-mode-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-input);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 2px;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    font-family: var(--font-family);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color var(--transition-speed), color var(--transition-speed);
+    white-space: nowrap;
+}
+
+.tab-btn.active {
+    background: var(--color-primary);
+    color: #0C0A14;
+}
+
+.tab-btn:not(.active):hover {
+    color: var(--color-text-main);
+    background: rgba(255,255,255,0.05);
+}
+
+/* Builder header row */
+.builder-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+.logic-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.logic-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-input);
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    padding: 2px;
+}
+
+.logic-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    font-family: var(--font-family);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color var(--transition-speed), color var(--transition-speed);
+    letter-spacing: 0.3px;
+}
+
+.logic-btn.active {
+    background: var(--color-green);
+    color: #fff;
+}
+
+.logic-btn:not(.active):hover {
+    color: var(--color-text-main);
+}
+
+.condition-count {
+    font-size: 10px;
+    color: var(--color-text-muted);
+    margin-left: auto;
+    font-style: italic;
+}
+
+/* Individual condition row */
+.condition-row {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    margin-bottom: 6px;
+    animation: slideDown 0.18s ease-out;
+}
+
+.cond-select,
+.cond-input {
+    background: var(--bg-input);
+    color: var(--color-text-main);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-sm);
+    font-family: var(--font-family);
+    font-size: 12px;
+    padding: 6px 8px;
+    outline: none;
+    transition: border-color var(--transition-speed);
+    min-width: 0;
+}
+
+.cond-select:focus,
+.cond-input:focus {
+    border-color: var(--color-primary);
+}
+
+.cond-field  { flex: 2; }
+.cond-op     { flex: 2.5; }
+.cond-value  { flex: 2; }
+
+.btn-remove-cond {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    color: var(--color-error);
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color var(--transition-speed), border-color var(--transition-speed);
+    padding: 0;
+}
+
+.btn-remove-cond:hover {
+    background-color: rgba(224, 92, 110, 0.1);
+    border-color: var(--color-error);
+}
+
+/* Add condition button */
+.btn-add-cond {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: transparent;
+    border: 1px dashed var(--color-border);
+    color: var(--color-text-muted);
+    font-family: var(--font-family);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 12px;
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    width: 100%;
+    margin-top: 2px;
+    transition: border-color var(--transition-speed), color var(--transition-speed);
+}
+
+.btn-add-cond:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+/* JSON preview (collapsible) */
+.query-preview {
+    margin-top: 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    overflow: hidden;
+    font-size: 11px;
+}
+
+.query-preview summary {
+    padding: 6px 10px;
+    font-size: 11px;
+    color: var(--color-text-muted);
+    font-weight: 600;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+}
+
+.query-preview summary:hover {
+    color: var(--color-text-main);
+}
+
+.query-preview summary::before {
+    font-size: 9px;
+}
+
+#query-preview-code {
+    padding: 8px 10px;
+    background: var(--bg-card);
+    color: var(--color-green);
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    border-top: 1px solid var(--color-border);
+    margin: 0;
+}
+
+/* Empty conditions placeholder */
+.conditions-empty {
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: 12px;
+    padding: 12px 0 4px;
+    font-style: italic;
+}
+
+</style>
+    <script>
+
+function runGoogleScript(funcName, ...args) {
+    return new Promise((resolve, reject) => {
+        google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            [funcName](...args);
+    });
+}
+
+const API_BASE = "http://localhost:8000";
+</script>
+
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "background": "var(--bg)",
+                        "on-background": "var(--on-bg)",
+                        "surface-container-lowest": "var(--surface-lowest)",
+                        "surface-container-low": "var(--surface-low)",
+                        "surface-variant": "var(--surface-variant)",
+                        "surface-container": "var(--surface-container)",
+                        "on-surface-variant": "var(--on-surface-variant)",
+                        "on-surface": "var(--on-bg)",
+                        "secondary-container": "var(--secondary-container)",
+                        "on-secondary-container": "var(--on-secondary-container)",
+                        "primary-container": "var(--primary-container)",
+                        "tertiary-fixed-dim": "var(--tertiary-dim)",
+                        "on-tertiary-fixed-variant": "var(--on-tertiary-variant)",
+                        "error": "var(--error)",
+                        "error-container": "var(--error-container)"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "border-width": "2px",
+                        "unit": "4px",
+                        "margin": "14px",
+                        "gutter": "10px",
+                        "container-padding": "12px",
+                        "shadow-offset": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-xl": ["Public Sans"],
+                        "data-field": ["JetBrains Mono"],
+                        "label-mono": ["JetBrains Mono"],
+                        "headline-lg": ["Public Sans"],
+                        "body-md": ["Public Sans"]
+                    },
+                    "fontSize": {
+                        "headline-xl": ["32px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "900"}],
+                        "data-field": ["14px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                        "label-mono": ["13px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "headline-lg": ["24px", {"lineHeight": "1.2", "fontWeight": "800"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "500"}]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        :root {
+            --bg: #FDFDFD;
+            --on-bg: #000000;
+            --surface-lowest: #FFFFFF;
+            --surface-low: #F0F0F0;
+            --surface-variant: #E0E0E0;
+            --surface-container: #E8E8E8;
+            --on-surface-variant: #444444;
+            --secondary-container: #F0F0F0;
+            --on-secondary-container: #000000;
+            --primary-container: #FFD300;
+            --tertiary-dim: #006670;
+            --on-tertiary-variant: #006670;
+            --error: #D32F2F;
+            --error-container: #FFCDD2;
+        }
+        html.dark {
+            --bg: #131313;
+            --on-bg: #e2e2e2;
+            --surface-lowest: #0e0e0e;
+            --surface-low: #1b1b1b;
+            --surface-variant: #353535;
+            --surface-container: #1f1f1f;
+            --on-surface-variant: #d1c6ab;
+            --secondary-container: #4a435b;
+            --on-secondary-container: #bbb1cd;
+            --primary-container: #ffd100;
+            --tertiary-dim: #00dbed;
+            --on-tertiary-variant: #004f56;
+            --error: #ffb4ab;
+            --error-container: #93000a;
+        }
+
+        .neo-shadow { box-shadow: 6px 6px 0px 0px #000000; }
+        .neo-shadow-active { box-shadow: 0px 0px 0px 0px #000000; transform: translate(6px, 6px); }
+        .neo-shadow-sm { box-shadow: 4px 4px 0px 0px #000000; }
+        .neo-shadow-hover:hover { box-shadow: 8px 8px 0px 0px #000000; transform: translate(-2px, -2px); }
+        .neo-shadow-hover:active { box-shadow: 0px 0px 0px 0px #000000; transform: translate(6px, 6px); }
+        input:focus, select:focus, textarea:focus { outline: none; background-color: var(--surface-low) !important; }
+        
+        /* Functional States overriding Tailwind */
+        .hidden { display: none !important; }
+        
+        /* Keeping JS Status Badge functionally intact but visually updated */
+        .status-badge { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.75rem; border: 2px solid black; border-radius: 9999px; }
+        .status-badge.checking { background-color: rgba(255, 211, 0, 0.2); }
+        .status-badge.checking .status-text { color: var(--primary-container); font-size: 10px; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 600;}
+        .status-badge.checking .pulse-dot { background-color: var(--primary-container); width: 8px; height: 8px; border-radius: 50%; animation: pulse 1.5s infinite alternate; }
+        
+        .status-badge.online { background-color: rgba(11, 235, 255, 0.2); }
+        .status-badge.online .status-text { color: var(--tertiary-dim); font-size: 10px; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 600;}
+        .status-badge.online .pulse-dot { background-color: var(--tertiary-dim); width: 8px; height: 8px; border-radius: 50%; animation: pulse 1.5s infinite alternate; }
+        
+        .status-badge.offline { background-color: rgba(255, 180, 171, 0.2); }
+        .status-badge.offline .status-text { color: var(--error); font-size: 10px; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 600;}
+        .status-badge.offline .pulse-dot { background-color: var(--error); width: 8px; height: 8px; border-radius: 50%; animation: pulse 1.5s infinite alternate; }
+
+        @keyframes pulse { 0% { opacity: 0.4; } 100% { opacity: 1; transform: scale(1.25); } }
+
+        /* Dynamic Schema Bar Tags */
+        .schema-field-tag { background-color: var(--surface-variant); border: 2px solid black; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px; font-family: 'JetBrains Mono'; font-size: 11px; color: var(--on-bg); }
+        .schema-field-tag.id-field { background-color: var(--primary-container); color: black; font-weight: 900; }
+
+        /* Spinner for buttons */
+        .btn-spinner { width: 18px; height: 18px; border: 3px solid rgba(0,0,0,0.2); border-top: 3px solid #000; border-radius: 50%; animation: spin 0.75s linear infinite; display: inline-block; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Ensure query builder JS elements match */
+        .cond-select, .cond-input { 
+            background: var(--surface-lowest); color: var(--on-bg); border: 2px solid #000; padding: 10px; font-family: 'JetBrains Mono'; font-size: 13px; font-weight: 600; box-shadow: 4px 4px 0px #000; transition: all 0.1s ease; outline: none; margin-bottom: 6px; 
+        }
+        .cond-select:focus, .cond-input:focus { border-color: var(--primary-container); box-shadow: 4px 4px 0px var(--primary-container); }
+        .btn-remove-cond { 
+            background: var(--error-container); border: 2px solid #000; color: var(--error); width: 42px; height: 42px; font-weight: 900; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 4px 4px 0px #000; transition: all 0.1s; margin-left: 8px; 
+        }
+        .btn-remove-cond:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px #000; }
+        .btn-remove-cond:active { transform: translate(4px, 4px); box-shadow: 0px 0px 0px #000; }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col border-x-border-width border-black overflow-x-hidden">
+
+    <!-- LOGIN VIEW -->
+    <div id="login-view" class="flex flex-col flex-grow p-margin space-y-8 hidden">
+        <header class="border-b-border-width border-black pb-4 mb-4 mt-4 flex justify-between items-center">
+            <h1 class="font-headline-lg text-[28px] font-black text-on-background uppercase tracking-tight">Setup Database</h1>
+            <button class="theme-toggle px-3 py-2 bg-white dark:bg-[#FFD300] border-2 border-black neo-shadow-sm font-bold text-black uppercase text-[12px] flex items-center gap-2 transition-transform hover:-translate-y-1">
+                <span class="dark:hidden">Light Mode</span>
+                <span class="hidden dark:block">Dark Mode</span>
+            </button>
+        </header>
+        <div class="space-y-6">
+            <div>
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Connection String (URI)</label>
+                <input type="password" id="mongo-uri-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="mongodb+srv://..." />
+            </div>
+            <div>
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Database Name</label>
+                <input type="text" id="mongo-db-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="my_database" />
+            </div>
+            <button id="btn-login" class="w-full bg-primary-container border-border-width border-black p-5 font-headline-lg text-[20px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all mt-8">
+                <span class="btn-text">Connect & Load</span>
+                <div class="btn-loader hidden" id="login-loader">
+                    <span class="btn-spinner"></span>
+                </div>
+            </button>
+            <div id="login-error" class="hidden text-error font-bold text-[14px] mt-4 p-4 border-2 border-black bg-error-container/20"></div>
+        </div>
+    </div>
+
+    <!-- APP VIEW -->
+    <div id="app-view" class="flex flex-col flex-grow hidden">
+        <!-- TopAppBar Component -->
+        <header class="bg-background border-b-border-width border-black flex justify-between items-center px-margin py-4 w-full sticky top-0 z-50">
+            <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">database</span>
+                <h1 class="font-headline-lg text-[22px] font-black text-on-background uppercase tracking-tight">MongoDB Sync</h1>
+            </div>
+            <div class="flex items-center gap-3">
+                <button class="theme-toggle px-3 py-2 bg-white dark:bg-[#FFD300] border-2 border-black neo-shadow-sm font-bold text-black uppercase text-[12px] flex items-center gap-2 transition-transform hover:-translate-y-1">
+                    <span class="dark:hidden">Light</span>
+                    <span class="hidden dark:block">Dark</span>
+                </button>
+                <div id="connection-status" class="status-badge checking">
+                    <span class="pulse-dot"></span>
+                    <span class="status-text">Checking</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Canvas -->
+        <main class="flex-grow p-margin space-y-5">
+            
+            <!-- Selection Section -->
+            <section class="space-y-4">
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block">Select Collection</label>
+                <div class="flex gap-gutter">
+                    <div class="relative flex-grow">
+                        <select id="collection-select" disabled class="w-full h-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background appearance-none cursor-pointer neo-shadow-sm">
+                            <option value="">Loading...</option>
+                        </select>
+                        <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                            <span class="material-symbols-outlined">expand_more</span>
+                        </div>
+                    </div>
+                    <button id="btn-import-schema" disabled class="bg-primary-container border-border-width border-black p-4 neo-shadow neo-shadow-hover flex items-center justify-center transition-all text-black disabled:opacity-50">
+                        <span class="material-symbols-outlined font-bold">download</span>
+                    </button>
+                    <button id="btn-refresh-collections" class="bg-surface-variant border-border-width border-black p-4 neo-shadow neo-shadow-hover flex items-center justify-center transition-all disabled:opacity-50">
+                        <span class="material-symbols-outlined">refresh</span>
+                    </button>
+                    <button id="btn-new-collection" class="bg-primary-container border-border-width border-black p-4 neo-shadow neo-shadow-hover flex items-center justify-center transition-all text-black disabled:opacity-50" title="Create New Collection">
+                        <span class="material-symbols-outlined font-bold">add</span>
+                    </button>
+                </div>
+                <!-- Inline New Collection Input -->
+                <div id="new-collection-container" class="hidden flex flex-col gap-2 pt-2">
+                    <input type="text" id="new-collection-input" class="w-full bg-surface-container-lowest border-border-width border-black p-3 font-data-field text-on-background neo-shadow-sm focus:outline-none" placeholder="Collection name" />
+                    <input type="text" id="new-collection-schema" class="w-full bg-surface-container-lowest border-border-width border-black p-3 font-data-field text-on-background neo-shadow-sm focus:outline-none" placeholder="Schema fields (e.g. name, age, email)" />
+                    <div class="flex gap-2">
+                        <button id="btn-create-collection" class="flex-grow bg-primary-container border-border-width border-black px-4 py-2 neo-shadow neo-shadow-hover font-bold text-black uppercase text-[12px] transition-transform hover:-translate-y-1">Create</button>
+                        <button id="btn-cancel-collection" class="flex-grow bg-surface-variant border-border-width border-black px-4 py-2 neo-shadow neo-shadow-hover font-bold text-on-surface-variant uppercase text-[12px] transition-transform hover:-translate-y-1">Cancel</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Schema Display Section -->
+            <section id="schema-bar" class="hidden bg-secondary-container border-border-width border-black p-container-padding space-y-4 neo-shadow-sm">
+                <div class="flex justify-between items-center">
+                    <span class="font-label-mono text-label-mono uppercase font-black text-on-secondary-container">Collection Schema</span>
+                    <span id="schema-total-records" class="font-label-mono text-[10px] text-on-secondary-container opacity-70"></span>
+                </div>
+                <div id="schema-bar-fields" class="flex flex-wrap gap-2">
+                    <!-- injected dynamically -->
+                </div>
+            </section>
+
+            <!-- Query Filter Section -->
+            <section class="space-y-3" id="query-group">
+                <div class="flex justify-between items-end">
+                    <label class="font-label-mono text-label-mono uppercase text-on-surface-variant">Query Filter</label>
+                    <div class="flex border-border-width border-black overflow-hidden neo-shadow-sm">
+                        <button id="tab-builder" class="px-4 py-2 bg-primary-container text-black font-label-mono text-[11px] font-black uppercase transition-colors">Builder</button>
+                        <button id="tab-json" class="px-4 py-2 bg-surface-variant text-on-surface-variant font-label-mono text-[11px] font-black uppercase border-l-border-width border-black transition-colors">JSON</button>
+                    </div>
+                </div>
+
+                <!-- GUI Builder Panel -->
+                <div id="builder-panel" class="space-y-3">
+                    <div class="flex justify-between items-center border-border-width border-black p-3 bg-surface-container-low neo-shadow-sm">
+                        <span class="font-label-mono text-[11px] uppercase">Match</span>
+                        <div class="flex border-2 border-black overflow-hidden">
+                            <button id="btn-logic-and" class="px-3 py-1 text-[10px] font-bold bg-white text-black border-r-2 border-black">ALL (AND)</button>
+                            <button id="btn-logic-or" class="px-3 py-1 text-[10px] font-bold bg-surface-variant text-on-surface-variant">ANY (OR)</button>
+                        </div>
+                        <span id="condition-count" class="font-label-mono text-[10px] opacity-70">fetch all</span>
+                    </div>
+                    
+                    <div id="conditions-list" class="space-y-3"></div>
+                    
+                    <button id="btn-add-condition" class="w-full bg-surface-container-low border-border-width border-black p-4 neo-shadow-sm flex items-center justify-center gap-3 group cursor-pointer hover:bg-surface-container hover:-translate-y-1 hover:shadow-[6px_6px_0px_#000] transition-all outline-none">
+                        <span class="material-symbols-outlined text-primary-container group-hover:scale-110 transition-transform">add_circle</span>
+                        <span class="font-label-mono text-label-mono uppercase">Add Match Condition</span>
+                    </button>
+                    
+                    <details class="border-border-width border-black p-3 bg-background neo-shadow-sm group mt-2">
+                        <summary class="flex items-center gap-2 opacity-70 cursor-pointer font-label-mono text-[10px] uppercase outline-none list-none">
+                            <span class="material-symbols-outlined text-[18px] group-open:hidden">terminal</span>
+                            <span class="material-symbols-outlined text-[18px] hidden group-open:block">code_off</span>
+                            Preview JSON
+                        </summary>
+                        <code id="query-preview-code" class="text-black dark:text-white bg-[#E8E8E8] dark:bg-[#1b1b1b] border-2 border-black p-4 block mt-4 whitespace-pre-wrap break-all text-[14px] font-black">{}</code>
+                    </details>
+                </div>
+
+                <!-- Raw JSON Panel -->
+                <div id="json-panel" class="hidden space-y-2">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="font-label-mono text-[10px] uppercase opacity-70">Raw MongoDB filter</span>
+                        <span id="json-validity" class="font-label-mono text-[10px] uppercase text-on-surface-variant bg-surface-variant px-2 py-1 border-2 border-black">Empty (Fetch All)</span>
+                    </div>
+                    <textarea id="query-input" class="w-full bg-[#E8E8E8] dark:bg-[#1b1b1b] text-black dark:text-white border-border-width border-black p-4 font-data-field text-data-field neo-shadow-sm focus:outline-none" placeholder='{ "status": "active" }'></textarea>
+                </div>
+            </section>
+
+            <!-- Record Limit -->
+            <section class="space-y-2 pt-2">
+                <div class="flex justify-between items-center">
+                    <label class="font-label-mono text-label-mono uppercase text-on-surface-variant">Record Limit</label>
+                    <span class="font-label-mono text-[11px] text-on-surface-variant italic lowercase">0 for unlimited</span>
+                </div>
+                <input id="limit-input" type="number" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all outline-none" value="0" min="0" />
+            </section>
+
+            <!-- Progress Bar -->
+            <div id="progress-text" class="hidden text-center font-label-mono text-[11px] uppercase mt-4 text-tertiary-fixed-dim">Initializing...</div>
+            <div id="progress-bar-container" class="hidden w-full h-4 bg-surface border-border-width border-black mt-2 overflow-hidden neo-shadow-sm">
+                <div id="progress-bar-fill" class="h-full bg-tertiary-fixed-dim transition-all" style="width: 0%;"></div>
+            </div>
+
+            <!-- Feedback Panel -->
+            <div id="feedback-panel" class="hidden bg-surface-variant border-border-width border-black p-4 neo-shadow-sm mt-4">
+                <div class="font-label-mono text-[11px] uppercase mb-4 opacity-70">Sync Results</div>
+                <div class="flex gap-3 mb-4">
+                    <div class="flex-1 bg-surface-container-lowest border-border-width border-black p-3 text-center neo-shadow-sm">
+                        <div id="stat-fetched" class="font-headline-lg text-[24px] font-black text-primary-container">0</div>
+                        <div class="font-label-mono text-[9px] uppercase opacity-70 mt-1">Fetched</div>
+                    </div>
+                    <div class="flex-1 bg-surface-container-lowest border-border-width border-black p-3 text-center neo-shadow-sm">
+                        <div id="stat-inserted" class="font-headline-lg text-[24px] font-black text-tertiary-fixed-dim">0</div>
+                        <div class="font-label-mono text-[9px] uppercase opacity-70 mt-1">Inserted</div>
+                    </div>
+                    <div class="flex-1 bg-surface-container-lowest border-border-width border-black p-3 text-center neo-shadow-sm">
+                        <div id="stat-updated" class="font-headline-lg text-[24px] font-black text-on-surface">0</div>
+                        <div class="font-label-mono text-[9px] uppercase opacity-70 mt-1">Updated</div>
+                    </div>
+                </div>
+                <div id="feedback-message" class="font-data-field text-[13px] bg-background border-border-width border-black p-4 mt-2 text-primary-container"></div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div id="action-buttons-container" class="pt-4 space-y-gutter">
+                <button id="btn-run" disabled class="w-full bg-primary-container border-border-width border-black p-4 font-headline-lg text-[18px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span class="btn-text">Sync &amp; Fetch Data</span>
+                    <span class="material-symbols-outlined font-black btn-icon-normal">sync</span>
+                    <span class="btn-spinner hidden"></span>
+                </button>
+                <button id="btn-delete" disabled class="w-full bg-[#FF4444] border-border-width border-black p-4 font-headline-lg text-[18px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span class="btn-text">Delete Selected</span>
+                    <span class="material-symbols-outlined font-black btn-icon-normal">delete_forever</span>
+                    <span class="btn-spinner hidden border-t-black"></span>
+                </button>
+            </div>
+            
+            <!-- Stop Button -->
+            <div id="btn-stop-container" class="pt-4 hidden">
+                <button id="btn-stop" class="w-full bg-[#F59E0B] border-border-width border-black p-4 font-headline-lg text-[18px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all">
+                    <span class="btn-text">Stop Sync</span>
+                    <span class="material-symbols-outlined font-black btn-icon-normal">stop_circle</span>
+                    <span class="btn-spinner hidden border-t-black"></span>
+                </button>
+            </div>
+
+            <!-- Help Accordion -->
+            <details class="group border-border-width border-black bg-surface-variant neo-shadow-sm mt-4">
+                <summary class="p-4 flex items-center justify-between cursor-pointer hover:bg-surface-container transition-all list-none outline-none">
+                    <span class="font-label-mono text-label-mono uppercase">How to use this Add-in</span>
+                    <span class="material-symbols-outlined group-open:rotate-180 transition-transform">expand_more</span>
+                </summary>
+                <div class="p-5 border-t-border-width border-black font-data-field text-[13px] opacity-80 space-y-4 bg-background">
+                    <p><strong>1. Fetching:</strong> Select collection, build filter, click Sync & Fetch.</p>
+                    <p><strong>2. Inserting:</strong> Import schema via ⬇, add rows below headers.</p>
+                    <p><strong>3. Updating:</strong> Modify cells in rows with _id. Sync pushes edits.</p>
+                </div>
+            </details>
+        </main>
+
+        <!-- Footer Component -->
+        <footer class="bg-background border-t-border-width border-black flex justify-center items-center py-5 w-full mt-auto">
+            <p class="font-label-mono text-[10px] uppercase text-on-surface-variant opacity-60">Excel-MongoDB Connector v1.0.0</p>
+        </footer>
+    </div>
+    
+    
+    <script>
+
+function runGoogleScript(funcName, ...args) {
+    return new Promise((resolve, reject) => {
+        google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            [funcName](...args);
+    });
+}
+
+        // Micro-interactions
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                if(btn.classList.contains('neo-shadow') && !btn.disabled) {
+                    btn.classList.remove('neo-shadow');
+                    btn.classList.add('neo-shadow-active');
+                }
+            });
+            btn.addEventListener('mouseup', () => {
+                if(btn.classList.contains('neo-shadow-active')) {
+                    btn.classList.remove('neo-shadow-active');
+                    btn.classList.add('neo-shadow');
+                }
+            });
+            btn.addEventListener('mouseleave', () => {
+                if(btn.classList.contains('neo-shadow-active')) {
+                    btn.classList.remove('neo-shadow-active');
+                    btn.classList.add('neo-shadow');
+                }
+            });
+        });
+        // Theme toggling
+        document.querySelectorAll('.theme-toggle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.documentElement.classList.toggle('dark');
+            });
+        });
+    </script>
+<script>
+
+function runGoogleScript(funcName, ...args) {
+    return new Promise((resolve, reject) => {
+        google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            [funcName](...args);
+    });
+}
+
+// Local dev uses fe/config.js. Production builds generate this value from ADDIN_API_BASE.
+
+
+let currentMongoUri = "";
+let currentMongoDb = "";
+
+function getAuthHeaders(existingHeaders = {}) {
+    return {
+        "X-Mongo-URI": currentMongoUri,
+        "X-Mongo-DB": currentMongoDb,
+        ...existingHeaders
+    };
+}
+
+// Fetch with a timeout so we fail fast instead of hanging
+async function fetchWithTimeout(url, options = {}, timeoutMs = 60000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    
+    options.headers = getAuthHeaders(options.headers || {});
+    
+    try {
+        const res = await fetch(url, { ...options, signal: controller.signal });
+        return res;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// DOM Elements
+const connectionStatus = document.getElementById("connection-status");
+const collectionSelect = document.getElementById("collection-select");
+const btnRefreshCollections = document.getElementById("btn-refresh-collections");
+const btnImportSchema = document.getElementById("btn-import-schema");
+const schemaBar = document.getElementById("schema-bar");
+const schemaBarFields = document.getElementById("schema-bar-fields");
+const queryInput = document.getElementById("query-input");
+const limitInput = document.getElementById("limit-input");
+const jsonValidity = document.getElementById("json-validity");
+const btnRun = document.getElementById("btn-run");
+const btnText = btnRun.querySelector(".btn-text");
+const btnSpinner = btnRun.querySelector(".btn-spinner");
+const feedbackPanel = document.getElementById("feedback-panel");
+const feedbackMessage = document.getElementById("feedback-message");
+const statFetched = document.getElementById("stat-fetched");
+const statInserted = document.getElementById("stat-inserted");
+const statUpdated = document.getElementById("stat-updated");
+
+// State
+let isApiOnline = false;
+let currentSchema = []; // field names currently in the sheet's row 1
+
+// Sync Control State
+let isSyncCancelled = false;
+let activeAbortController = null;
+
+// ── Query Builder State ──
+let guiLogic = 'and';       // 'and' | 'or'
+let conditionCounter = 0;   // unique ID for each row
+
+const GUI_OPERATORS = [
+    { label: '=  equals',         value: 'eq',      hasValue: true  },
+    { label: '\u2260  not equals',  value: 'ne',      hasValue: true  },
+    { label: '>  greater than',   value: 'gt',      hasValue: true  },
+    { label: '\u2265  greater or =', value: 'gte',   hasValue: true  },
+    { label: '<  less than',      value: 'lt',      hasValue: true  },
+    { label: '\u2264  less or =',    value: 'lte',   hasValue: true  },
+    { label: '~  contains',       value: 'regex',   hasValue: true  },
+    { label: '^  starts with',    value: 'starts',  hasValue: true  },
+    { label: '\u2208  in (a,b,c)', value: 'in',      hasValue: true  },
+    { label: '\u2209  not in',     value: 'nin',     hasValue: true  },
+    { label: '\u2713  exists',     value: 'exists',  hasValue: false },
+    { label: '\u2717  not exists', value: 'nexists', hasValue: false },
+];
+
+// Initialize Add-in
+window.addEventListener("load", async () => {
+    if (true) {
+        try {
+            const settings = await runGoogleScript('getSettings');
+            currentMongoUri = settings.MongoUri || "";
+            currentMongoDb = settings.MongoDb || "";
+            
+            if (currentMongoUri && currentMongoDb) {
+                document.getElementById('login-view').classList.add('hidden');
+                document.getElementById('app-view').classList.remove('hidden');
+                await initApp();
+            } else {
+                document.getElementById('login-view').classList.remove('hidden');
+                document.getElementById('app-view').classList.add('hidden');
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+});
+});
+
+// App Initialization
+async function initApp() {
+    // Collection controls
+    btnRefreshCollections.addEventListener('click', loadCollections);
+    btnImportSchema.addEventListener('click', importSchema);
+    collectionSelect.addEventListener('change', () => {
+        onCollectionChange();
+        saveSheetState();
+    });
+
+    // Query builder controls
+    document.getElementById('tab-builder').addEventListener('click', () => switchQueryMode('builder'));
+    document.getElementById('tab-json').addEventListener('click',    () => switchQueryMode('json'));
+    document.getElementById('btn-add-condition').addEventListener('click', handleAddCondition);
+    document.getElementById('btn-logic-and').addEventListener('click', () => setGuiLogic('and'));
+    document.getElementById('btn-logic-or').addEventListener('click',  () => setGuiLogic('or'));
+
+    // JSON textarea
+    queryInput.addEventListener('input', () => {
+        validateQuerySyntax();
+        saveSheetState();
+    });
+
+    // Main buttons
+    btnRun.addEventListener('click', runSyncAndFetch);
+    const btnDelete = document.getElementById('btn-delete');
+    if (btnDelete) {
+        btnDelete.addEventListener('click', runDeleteSelected);
+    }
+
+    // Boot sequence
+    await checkApiHealth();
+    if (isApiOnline) await loadCollections();
+    
+    // Register workbook activation event and load current state
+    
+    await loadSheetState();
+    
+    await refreshSchemaBar();
+}
+
+async function saveSheetState() {
+    const col = collectionSelect.value || "";
+    const query = queryInput.value || "";
+    await runGoogleScript('saveSettings', { syncCollection: col, syncQuery: query });
+}
+
+async function loadSheetState() {
+    try {
+        const settings = await runGoogleScript('getSettings');
+        if (settings.syncCollection) collectionSelect.value = settings.syncCollection;
+        if (settings.syncQuery) {
+            queryInput.value = settings.syncQuery;
+            validateQuerySyntax();
+        }
+    } catch (e) { console.error(e); }
+}
+
+async function onWorksheetActivated(event) {
+    await loadSheetState();
+    await refreshSchemaBar();
+}
+
+// Check if FastAPI is running and connected to MongoDB
+async function checkApiHealth() {
+    try {
+        updateStatus("checking", "Checking API...");
+        const res = await fetchWithTimeout(`${API_BASE}/health`);
+        const data = await res.json();
+        
+        if (data.status === "ok") {
+            isApiOnline = true;
+            updateStatus("online", "Connected to Mongo");
+            btnRun.disabled = false;
+            if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = false;
+        } else {
+            throw new Error("Health check returned status " + data.status);
+        }
+    } catch (err) {
+        isApiOnline = false;
+        updateStatus("offline", "API Offline");
+        btnRun.disabled = true;
+        if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = true;
+        const msg = err.name === "AbortError"
+            ? "Connection timed out. Make sure ./run.sh is running in your terminal."
+            : "Backend API is offline. Run ./run.sh in your terminal first.";
+        showError(msg);
+    }
+}
+
+// Load MongoDB Collections into selector dropdown
+async function loadCollections() {
+    if (!isApiOnline) return;
+    
+    collectionSelect.disabled = true;
+    btnImportSchema.disabled = true;
+    collectionSelect.innerHTML = '<option value="">Loading...</option>';
+    
+    try {
+        const res = await fetchWithTimeout(`${API_BASE}/collections`);
+        const data = await res.json();
+        
+        if (res.ok && data.collections) {
+            collectionSelect.innerHTML = "";
+            if (data.collections.length === 0) {
+                collectionSelect.innerHTML = '<option value="">(No collections found)</option>';
+            } else {
+                data.collections.forEach(colName => {
+                    const opt = document.createElement("option");
+                    opt.value = colName;
+                    opt.textContent = colName;
+                    collectionSelect.appendChild(opt);
+                });
+                collectionSelect.disabled = false;
+                btnImportSchema.disabled = false;
+            }
+        } else {
+            throw new Error(data.detail || "Failed to load collections");
+        }
+    } catch (err) {
+        showError("Failed to fetch MongoDB collections: " + err.message);
+        collectionSelect.innerHTML = '<option value="">Error loading collections</option>';
+    }
+}
+
+// Called when the user switches collection — re-read schema from sheet
+function onCollectionChange() {
+    // Schema bar stays showing whatever is in the sheet.
+    // User must click Import Schema or run a Fetch to update it.
+    refreshSchemaBar();
+}
+
+// Real-time JSON validation
+function validateQuerySyntax() {
+    const val = queryInput.value.trim();
+    if (!val) {
+        jsonValidity.className = "validity-indicator empty";
+        jsonValidity.textContent = "Empty (Fetch All)";
+        btnRun.disabled = !isApiOnline;
+        if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = !isApiOnline;
+        return true;
+    }
+    
+    try {
+        const parsed = JSON.parse(val);
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            throw new Error("Must be a JSON object");
+        }
+        jsonValidity.className = "validity-indicator valid";
+        jsonValidity.textContent = "Valid Filter JSON";
+        btnRun.disabled = !isApiOnline;
+        if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = !isApiOnline;
+        return true;
+    } catch (err) {
+        jsonValidity.className = "validity-indicator invalid";
+        jsonValidity.textContent = "Invalid JSON";
+        btnRun.disabled = true;
+        if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = true;
+        return false;
+    }
+}
+
+// Core Workflow: Sync Excel adjustments then Fetch matching data
+async function runSyncAndFetch() {
+    const collection = collectionSelect.value;
+    if (!collection) {
+        showError("Please select a database collection first.");
+        return;
+    }
+
+    if (!validateQuerySyntax()) {
+        showError("Query filter is not valid JSON.");
+        return;
+    }
+
+    setLoading(true);
+    hideFeedback();
+    
+    isSyncCancelled = false;
+    activeAbortController = new AbortController();
+
+    const actionContainer = document.getElementById("action-buttons-container");
+    const btnStopContainer = document.getElementById("btn-stop-container");
+    const btnStop = document.getElementById("btn-stop");
+    
+    if (actionContainer) actionContainer.classList.add("hidden");
+    if (btnStopContainer) btnStopContainer.classList.remove("hidden");
+    if (btnStop) {
+        btnStop.disabled = false;
+        btnStop.querySelector(".btn-text").textContent = "Stop Sync";
+        btnStop.onclick = () => {
+            isSyncCancelled = true;
+            if (activeAbortController) activeAbortController.abort();
+            btnStop.querySelector(".btn-text").textContent = "Stopping...";
+            btnStop.disabled = true;
+        };
+    }
+    
+    let expectedTotal = 1000000;
+    let inserted = 0;
+    let updated = 0;
+    let totalFetched = 0;
+    try {
+        const countRes = await fetchWithTimeout(`${API_BASE}/schema?collection=${encodeURIComponent(collection)}`);
+        if (countRes.ok) {
+            const countData = await countRes.json();
+            expectedTotal = countData.total_count || 1000000;
+        }
+    } catch (e) {}
+
+    updateProgress("Reading Excel data...", 0);
+
+    try {
+        // Suspend auto-calculation and events for extreme performance boost
+        await runGoogleScript('clearSheet', collName);
+            await runGoogleScript('appendDataToSheet', collName, "[]", fields, 1);
+            await runGoogleScript('saveSettings', { syncCollection: collName, syncQuery: "{}" });
+
+            // Manually trigger change to load schema
+            const event = new Event('change');
+            select.dispatchEvent(event);
+        } else {
+            showError(data.detail || "Failed to create collection");
+        }
+    } catch (e) {
+        showError(e.message);
+    } finally {
+        createBtn.textContent = "Create";
+        createBtn.disabled = false;
+    }
+});
+
+function hideFeedback() {
+    feedbackPanel.classList.add("hidden");
+}
+
+</script>
+</body>
+</html>
