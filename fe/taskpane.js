@@ -130,6 +130,7 @@ async function initApp() {
     // Query builder controls
     document.getElementById('tab-builder').addEventListener('click', () => switchQueryMode('builder'));
     document.getElementById('tab-json').addEventListener('click',    () => switchQueryMode('json'));
+    document.getElementById('tab-multi').addEventListener('click',   () => switchQueryMode('multi'));
     document.getElementById('btn-add-condition').addEventListener('click', handleAddCondition);
     document.getElementById('btn-logic-and').addEventListener('click', () => setGuiLogic('and'));
     document.getElementById('btn-logic-or').addEventListener('click',  () => setGuiLogic('or'));
@@ -137,6 +138,11 @@ async function initApp() {
     // JSON textarea
     queryInput.addEventListener('input', () => {
         validateQuerySyntax();
+        saveSheetState();
+    });
+
+    document.getElementById('multi-input').addEventListener('input', () => {
+        validateMultiSyntax();
         saveSheetState();
     });
 
@@ -164,11 +170,15 @@ async function initApp() {
 async function saveSheetState() {
     const col = collectionSelect.value || "";
     const query = queryInput.value || "";
+    const multiQuery = document.getElementById("multi-input").value || "";
+    const isMultiMode = document.getElementById('tab-multi').classList.contains('active');
     
     await Excel.run(async (context) => {
         const sheet = context.workbook.worksheets.getActiveWorksheet();
         sheet.customProperties.add("syncCollection", col);
         sheet.customProperties.add("syncQuery", query);
+        sheet.customProperties.add("syncMultiQuery", multiQuery);
+        sheet.customProperties.add("isMultiMode", isMultiMode ? "true" : "false");
         await context.sync();
     }).catch(console.error);
 }
@@ -178,8 +188,13 @@ async function loadSheetState() {
         const sheet = context.workbook.worksheets.getActiveWorksheet();
         const colProp = sheet.customProperties.getItemOrNullObject("syncCollection");
         const queryProp = sheet.customProperties.getItemOrNullObject("syncQuery");
+        const multiQueryProp = sheet.customProperties.getItemOrNullObject("syncMultiQuery");
+        const multiModeProp = sheet.customProperties.getItemOrNullObject("isMultiMode");
+        
         colProp.load("value");
         queryProp.load("value");
+        multiQueryProp.load("value");
+        multiModeProp.load("value");
         await context.sync();
         
         if (!colProp.isNullObject && colProp.value) {
@@ -188,6 +203,13 @@ async function loadSheetState() {
         if (!queryProp.isNullObject && queryProp.value) {
             queryInput.value = queryProp.value;
             validateQuerySyntax();
+        }
+        if (!multiQueryProp.isNullObject && multiQueryProp.value) {
+            document.getElementById("multi-input").value = multiQueryProp.value;
+            validateMultiSyntax();
+        }
+        if (!multiModeProp.isNullObject && multiModeProp.value === "true") {
+            switchQueryMode("multi");
         }
     }).catch(console.error);
 }
@@ -345,19 +367,56 @@ function validateQuerySyntax() {
     }
 }
 
+function validateMultiSyntax() {
+    const multiInput = document.getElementById('multi-input');
+    const multiValidity = document.getElementById('multi-validity');
+    const val = multiInput.value.trim();
+    if (!val) {
+        multiValidity.className = "validity-indicator invalid";
+        multiValidity.textContent = "Empty";
+        btnRun.disabled = true;
+        return false;
+    }
+    
+    try {
+        const parsed = JSON.parse(val);
+        if (!Array.isArray(parsed)) {
+            throw new Error("Must be a JSON array");
+        }
+        multiValidity.className = "validity-indicator valid";
+        multiValidity.textContent = "Valid JSON";
+        btnRun.disabled = !isApiOnline;
+        return true;
+    } catch (e) {
+        multiValidity.className = "validity-indicator invalid";
+        multiValidity.textContent = "Invalid JSON Array";
+        btnRun.disabled = true;
+        return false;
+    }
+}
+
 // Core Workflow: Sync Excel adjustments then Fetch matching data
 async function runSyncAndFetch() {
-    const collection = collectionSelect.value;
-    if (!collection) {
-        showError("Please select a database collection first.");
-        return;
-    }
+    const isMultiMode = document.getElementById('tab-multi').classList.contains('active');
+    let collection = "";
 
-    await ensureTargetSheet(collection);
+    if (!isMultiMode) {
+        collection = collectionSelect.value;
+        if (!collection) {
+            showError("Please select a database collection first.");
+            return;
+        }
+        await ensureTargetSheet(collection);
 
-    if (!validateQuerySyntax()) {
-        showError("Query filter is not valid JSON.");
-        return;
+        if (!validateQuerySyntax()) {
+            showError("Query filter is not valid JSON.");
+            return;
+        }
+    } else {
+        if (!validateMultiSyntax()) {
+            showError("Multi query array is not valid JSON.");
+            return;
+        }
     }
 
     setLoading(true);
@@ -387,15 +446,16 @@ async function runSyncAndFetch() {
     let inserted = 0;
     let updated = 0;
     let totalFetched = 0;
-    try {
-        const countRes = await fetchWithTimeout(`${API_BASE}/schema?collection=${encodeURIComponent(collection)}`);
-        if (countRes.ok) {
-            const countData = await countRes.json();
-            expectedTotal = countData.total_count || 1000000;
-        }
-    } catch (e) {}
 
-    updateProgress("Reading Excel data...", 0);
+    if (!isMultiMode) {
+        try {
+            const countRes = await fetchWithTimeout(`${API_BASE}/schema?collection=${encodeURIComponent(collection)}`);
+            if (countRes.ok) {
+                const countData = await countRes.json();
+                expectedTotal = countData.total_count || 1000000;
+            }
+        } catch (e) {}
+    }
 
     try {
         // Suspend auto-calculation and events for extreme performance boost
@@ -405,86 +465,101 @@ async function runSyncAndFetch() {
             await context.sync();
         }).catch(() => {});
 
-        const rawSheetData = await getSheetData();
-        const syncPayload = parseSheetData(rawSheetData);
+        // Data pushing is skipped in multi-mode for safety
+        if (!isMultiMode) {
+            updateProgress("Reading Excel data...", 0);
+            const rawSheetData = await getSheetData();
+            const syncPayload = parseSheetData(rawSheetData);
 
-        if (syncPayload.inserts.length > 0 && currentSchema.length === 0) {
-            showError("Cannot insert: no schema found in the sheet. Click '⬇ Schema' to import first.");
-            setLoading(false);
-            hideProgress();
-            return;
-        }
-        
-        let conflicts = [];
-
-        if (syncPayload.inserts.length > 0 || syncPayload.updates.length > 0) {
-            const chunkSize = 1000;
-            const totalTasks = syncPayload.inserts.length + syncPayload.updates.length;
-            let completedTasks = 0;
-            
-            for (let i = 0; i < syncPayload.inserts.length; i += chunkSize) {
-                if (isSyncCancelled) break;
-                const chunk = syncPayload.inserts.slice(i, i + chunkSize);
-                updateProgress(
-                    `Bulk inserting ${completedTasks + chunk.length} / ${totalTasks}...`,
-                    ((completedTasks + chunk.length) / totalTasks) * 100
-                );
-                const res = await fetchWithTimeout(`${API_BASE}/bulk_insert`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ collection, data: chunk })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || "Bulk insert failed");
-                inserted += data.inserted || 0;
-                completedTasks += chunk.length;
-            }
-
-            for (let i = 0; i < syncPayload.updates.length; i += chunkSize) {
-                if (isSyncCancelled) break;
-                const chunk = syncPayload.updates.slice(i, i + chunkSize);
-                updateProgress(
-                    `Bulk updating ${completedTasks + chunk.length} / ${totalTasks}...`,
-                    ((completedTasks + chunk.length) / totalTasks) * 100
-                );
-                const res = await fetchWithTimeout(`${API_BASE}/bulk_update`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ collection, data: chunk })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || "Bulk update failed");
-                updated += data.updated || 0;
-                if (data.conflicts) conflicts.push(...data.conflicts);
-                completedTasks += chunk.length;
-            }
-
-            if (conflicts.length > 0) {
-                await Excel.run(async (context) => {
-                    const sheet = context.workbook.worksheets.getActiveWorksheet();
-                    conflicts.forEach(c => {
-                        if (c._rowIndex !== undefined) {
-                            const range = sheet.getRangeByIndexes(c._rowIndex, 0, 1, currentSchema.length || 10);
-                            range.format.fill.color = "#FFCCCC";
-                        }
-                    });
-                    await context.sync();
-                });
-                showError(`${conflicts.length} conflict(s) detected. Conflicting rows are red. Sync again to overwrite with server data.`);
+            if (syncPayload.inserts.length > 0 && currentSchema.length === 0) {
+                showError("Cannot insert: no schema found in the sheet. Click '⬇ Schema' to import first.");
                 setLoading(false);
                 hideProgress();
                 return;
             }
+            
+            let conflicts = [];
+
+            if (syncPayload.inserts.length > 0 || syncPayload.updates.length > 0) {
+                const chunkSize = 1000;
+                const totalTasks = syncPayload.inserts.length + syncPayload.updates.length;
+                let completedTasks = 0;
+                
+                for (let i = 0; i < syncPayload.inserts.length; i += chunkSize) {
+                    if (isSyncCancelled) break;
+                    const chunk = syncPayload.inserts.slice(i, i + chunkSize);
+                    updateProgress(
+                        `Bulk inserting ${completedTasks + chunk.length} / ${totalTasks}...`,
+                        ((completedTasks + chunk.length) / totalTasks) * 100
+                    );
+                    const res = await fetchWithTimeout(`${API_BASE}/bulk_insert`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ collection, data: chunk })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || "Bulk insert failed");
+                    inserted += data.inserted || 0;
+                    completedTasks += chunk.length;
+                }
+
+                for (let i = 0; i < syncPayload.updates.length; i += chunkSize) {
+                    if (isSyncCancelled) break;
+                    const chunk = syncPayload.updates.slice(i, i + chunkSize);
+                    updateProgress(
+                        `Bulk updating ${completedTasks + chunk.length} / ${totalTasks}...`,
+                        ((completedTasks + chunk.length) / totalTasks) * 100
+                    );
+                    const res = await fetchWithTimeout(`${API_BASE}/bulk_update`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ collection, data: chunk })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || "Bulk update failed");
+                    updated += data.updated || 0;
+                    if (data.conflicts) conflicts.push(...data.conflicts);
+                    completedTasks += chunk.length;
+                }
+
+                if (conflicts.length > 0) {
+                    await Excel.run(async (context) => {
+                        const sheet = context.workbook.worksheets.getActiveWorksheet();
+                        conflicts.forEach(c => {
+                            if (c._rowIndex !== undefined) {
+                                const range = sheet.getRangeByIndexes(c._rowIndex, 0, 1, currentSchema.length || 10);
+                                range.format.fill.color = "#FFCCCC";
+                            }
+                        });
+                        await context.sync();
+                    });
+                    showError(`${conflicts.length} conflict(s) detected. Conflicting rows are red. Sync again to overwrite with server data.`);
+                    setLoading(false);
+                    hideProgress();
+                    return;
+                }
+            }
         }
 
         updateProgress("Connecting to fetch stream...", 0);
-        let filters = {};
-        if (queryInput.value.trim()) filters = JSON.parse(queryInput.value.trim());
+        let fetchUrl = `${API_BASE}/stream_fetch`;
+        let fetchBody = {};
 
-        const fetchRes = await fetch(`${API_BASE}/stream_fetch`, {
+        if (isMultiMode) {
+            fetchUrl = `${API_BASE}/multi_stream_fetch`;
+            fetchBody = {
+                queries: JSON.parse(document.getElementById('multi-input').value.trim())
+            };
+        } else {
+            let filters = {};
+            if (queryInput.value.trim()) filters = JSON.parse(queryInput.value.trim());
+            fetchBody = { collection, filters, limit: parseInt(limitInput.value) || 0 };
+        }
+
+        const fetchRes = await fetch(fetchUrl, {
             method: "POST",
             headers: getAuthHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ collection, filters, limit: parseInt(limitInput.value) || 0 }),
+            body: JSON.stringify(fetchBody),
             signal: activeAbortController.signal
         });
         
@@ -493,13 +568,12 @@ async function runSyncAndFetch() {
         const reader = fetchRes.body.getReader();
         const decoder = new TextDecoder("utf-8");
         let buffer = "";
-        
         const BATCH_SIZE = 5000;
-        let currentBatch = [];
-        let startRow = 1; 
-        let headersKnown = false;
-        let headers = ["_id"];
-        let baseSheetName = collection;
+        
+        let collState = {};
+        if (!isMultiMode) {
+            collState[collection] = { currentBatch: [], startRow: 1, headersKnown: false, headers: ["_id"] };
+        }
 
         while (!isSyncCancelled) {
             const { done, value } = await reader.read();
@@ -513,51 +587,62 @@ async function runSyncAndFetch() {
                 if (line.trim()) {
                     const doc = JSON.parse(line);
                     if (doc._error) throw new Error(doc._error);
-                    currentBatch.push(doc);
+                    
+                    const docCol = doc._collection || collection;
+                    if (!collState[docCol]) {
+                        collState[docCol] = { currentBatch: [], startRow: 1, headersKnown: false, headers: ["_id"] };
+                    }
+                    
+                    if (doc._collection) {
+                        delete doc._collection;
+                    }
+                    
+                    collState[docCol].currentBatch.push(doc);
                     totalFetched++;
                 }
             }
             
-            while (currentBatch.length >= BATCH_SIZE) {
-                const chunkToProcess = currentBatch.slice(0, BATCH_SIZE);
-                currentBatch = currentBatch.slice(BATCH_SIZE);
-                
-                if (!headersKnown) {
-                    const hs = new Set(["_id"]);
-                    chunkToProcess.forEach(r => Object.keys(r).forEach(k => hs.add(k)));
-                    headers = Array.from(hs);
-                    headersKnown = true;
+            for (const colName in collState) {
+                let state = collState[colName];
+                while (state.currentBatch.length >= BATCH_SIZE) {
+                    const chunkToProcess = state.currentBatch.slice(0, BATCH_SIZE);
+                    state.currentBatch = state.currentBatch.slice(BATCH_SIZE);
+                    
+                    if (!state.headersKnown) {
+                        const hs = new Set(["_id"]);
+                        chunkToProcess.forEach(r => Object.keys(r).forEach(k => hs.add(k)));
+                        state.headers = Array.from(hs);
+                        state.headersKnown = true;
+                        if (isMultiMode) await ensureTargetSheet(colName);
+                    }
+                    
+                    updateProgress(`Rendering ${colName}...`, null);
+                    state.startRow = await appendDataToSheet(colName, chunkToProcess, state.headers, state.startRow);
+                    
+                    await new Promise(resolve => setTimeout(resolve, 300));
                 }
-                updateProgress(
-                    `Rendering ${totalFetched - currentBatch.length} / ${expectedTotal} records...`,
-                    ((totalFetched - currentBatch.length) / expectedTotal) * 100
-                );
-                startRow = await appendDataToSheet(baseSheetName, chunkToProcess, headers, startRow);
-                
-                // Yield to garbage collector and UI renderer to prevent browser crash
-                await new Promise(resolve => setTimeout(resolve, 300));
             }
         }
 
-        if (currentBatch.length > 0) {
-            if (!headersKnown) {
-                const hs = new Set(["_id"]);
-                currentBatch.forEach(r => Object.keys(r).forEach(k => hs.add(k)));
-                headers = Array.from(hs);
+        for (const colName in collState) {
+            let state = collState[colName];
+            if (state.currentBatch.length > 0) {
+                if (!state.headersKnown) {
+                    const hs = new Set(["_id"]);
+                    state.currentBatch.forEach(r => Object.keys(r).forEach(k => hs.add(k)));
+                    state.headers = Array.from(hs);
+                    if (isMultiMode) await ensureTargetSheet(colName);
+                }
+                updateProgress(`Rendering final ${colName} records...`, null);
+                state.startRow = await appendDataToSheet(colName, state.currentBatch, state.headers, state.startRow);
             }
-            updateProgress(
-                `Rendering final ${currentBatch.length} records...`,
-                (totalFetched / expectedTotal) * 100
-            );
-            startRow = await appendDataToSheet(baseSheetName, currentBatch, headers, startRow);
-        }
-
-        // If totalFetched is 0, we still clear the sheet
-        if (totalFetched === 0) {
-            await Excel.run(async (context) => {
-                const sheet = context.workbook.worksheets.getActiveWorksheet();
-                try { sheet.getUsedRange().clear(); await context.sync(); } catch(e){}
-            });
+            
+            if (state.startRow === 1 && !isMultiMode) {
+                await Excel.run(async (context) => {
+                    const sheet = context.workbook.worksheets.getActiveWorksheet();
+                    try { sheet.getUsedRange().clear(); await context.sync(); } catch(e){}
+                });
+            }
         }
 
         await refreshSchemaBar();
@@ -566,7 +651,7 @@ async function runSyncAndFetch() {
             isSyncCancelled
                 ? `Sync stopped by user. Loaded ${totalFetched} records.`
                 : (totalFetched > 0 
-                    ? `Sync process complete! Loaded ${totalFetched} records into the sheet(s).`
+                    ? `Sync process complete! Loaded ${totalFetched} records.`
                     : `Sync complete. No records matched the query.`),
             totalFetched, inserted, updated
         );
@@ -1098,20 +1183,29 @@ async function handleAddCondition() {
 function switchQueryMode(mode) {
     const builderPanel = document.getElementById('builder-panel');
     const jsonPanel    = document.getElementById('json-panel');
+    const multiPanel   = document.getElementById('multi-panel');
     const tabBuilder   = document.getElementById('tab-builder');
     const tabJson      = document.getElementById('tab-json');
+    const tabMulti     = document.getElementById('tab-multi');
+
+    builderPanel.classList.add('hidden');
+    jsonPanel.classList.add('hidden');
+    multiPanel.classList.add('hidden');
+    
+    tabBuilder.classList.remove('active');
+    tabJson.classList.remove('active');
+    tabMulti.classList.remove('active');
 
     if (mode === 'builder') {
         builderPanel.classList.remove('hidden');
-        jsonPanel.classList.add('hidden');
         tabBuilder.classList.add('active');
-        tabJson.classList.remove('active');
         updateQueryFromGui(); // keep JSON in sync
-    } else {
-        builderPanel.classList.add('hidden');
+    } else if (mode === 'json') {
         jsonPanel.classList.remove('hidden');
-        tabBuilder.classList.remove('active');
         tabJson.classList.add('active');
+    } else if (mode === 'multi') {
+        multiPanel.classList.remove('hidden');
+        tabMulti.classList.add('active');
     }
 }
 

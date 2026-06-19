@@ -2,6 +2,7 @@ from fastapi import Header, HTTPException
 from motor.motor_asyncio import AsyncIOMotorClient
 from motor.core import AgnosticDatabase
 
+# created client cache so that a new connection is not opened unnesesarily
 client_cache = {}
 
 async def get_db(x_mongo_uri: str = Header(None), x_mongo_db: str = Header(None)) -> AgnosticDatabase:

@@ -264,6 +264,7 @@
                     <div class="flex border-border-width border-black overflow-hidden neo-shadow-sm">
                         <button id="tab-builder" class="px-4 py-2 bg-primary-container text-black font-label-mono text-[11px] font-black uppercase transition-colors">Builder</button>
                         <button id="tab-json" class="px-4 py-2 bg-surface-variant text-on-surface-variant font-label-mono text-[11px] font-black uppercase border-l-border-width border-black transition-colors">JSON</button>
+                        <button id="tab-multi" class="px-4 py-2 bg-surface-variant text-on-surface-variant font-label-mono text-[11px] font-black uppercase border-l-border-width border-black transition-colors">MULTI</button>
                     </div>
                 </div>
 
@@ -302,6 +303,18 @@
                         <span id="json-validity" class="font-label-mono text-[10px] uppercase text-on-surface-variant bg-surface-variant px-2 py-1 border-2 border-black">Empty (Fetch All)</span>
                     </div>
                     <textarea id="query-input" class="w-full bg-[#E8E8E8] dark:bg-[#1b1b1b] text-black dark:text-white border-border-width border-black p-4 font-data-field text-data-field neo-shadow-sm focus:outline-none" placeholder='{ "status": "active" }'></textarea>
+                </div>
+
+                <!-- Multi-Fetch Panel -->
+                <div id="multi-panel" class="hidden space-y-2">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="font-label-mono text-[10px] uppercase opacity-70">Array of Queries</span>
+                        <span id="multi-validity" class="font-label-mono text-[10px] uppercase text-on-surface-variant bg-surface-variant px-2 py-1 border-2 border-black">Valid JSON</span>
+                    </div>
+                    <textarea id="multi-input" class="w-full h-[150px] bg-[#E8E8E8] dark:bg-[#1b1b1b] text-black dark:text-white border-border-width border-black p-4 font-data-field text-data-field neo-shadow-sm focus:outline-none" placeholder='[
+  { "collection": "customers", "filters": { "visits": { "$gt": 5 } } },
+  { "collection": "orders", "filters": { "total": { "$gt": 100 } } }
+]'></textarea>
                 </div>
             </section>
 
