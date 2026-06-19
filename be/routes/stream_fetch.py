@@ -8,11 +8,15 @@ import asyncio
 from bson import ObjectId
 from datetime import datetime
 
+import base64
+
 def mongo_serializer(obj):
     if isinstance(obj, ObjectId):
         return str(obj)
     if isinstance(obj, datetime):
         return obj.isoformat()
+    if isinstance(obj, bytes):
+        return base64.b64encode(obj).decode('utf-8')
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 router = APIRouter()

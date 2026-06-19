@@ -106,7 +106,11 @@ async function initApp() {
     // Collection controls
     btnRefreshCollections.addEventListener('click', loadCollections);
     btnImportSchema.addEventListener('click', importSchema);
-    collectionSelect.addEventListener('change', () => {
+    collectionSelect.addEventListener('change', async () => {
+        const col = collectionSelect.value;
+        if (col) {
+            await ensureTargetSheet(col);
+        }
         onCollectionChange();
         saveSheetState();
     });
@@ -179,6 +183,55 @@ async function loadSheetState() {
 async function onWorksheetActivated(event) {
     await loadSheetState();
     await refreshSchemaBar();
+}
+
+async function ensureTargetSheet(collection) {
+    if (!collection) return;
+    await Excel.run(async (context) => {
+        const activeSheet = context.workbook.worksheets.getActiveWorksheet();
+        activeSheet.load("name");
+        
+        const colProp = activeSheet.customProperties.getItemOrNullObject("syncCollection");
+        colProp.load("value");
+        
+        await context.sync();
+        
+        let activeCollection = null;
+        if (!colProp.isNullObject && colProp.value) {
+            activeCollection = colProp.value;
+        }
+
+        let safeName = collection.substring(0, 31).replace(/[\\/?*\[\]:]/g, '_');
+
+        if (!activeCollection || activeCollection === collection) {
+            try {
+                if (activeSheet.name !== safeName) {
+                    activeSheet.name = safeName;
+                    await context.sync();
+                }
+            } catch (e) {}
+            activeSheet.customProperties.add("syncCollection", collection);
+            await context.sync();
+        } else {
+            let existingSheet = context.workbook.worksheets.getItemOrNullObject(safeName);
+            await context.sync();
+            
+            if (!existingSheet.isNullObject) {
+                existingSheet.activate();
+                existingSheet.customProperties.add("syncCollection", collection);
+                await context.sync();
+            } else {
+                let newSheet = context.workbook.worksheets.add();
+                try {
+                    newSheet.name = safeName;
+                    await context.sync();
+                } catch(e) {}
+                newSheet.activate();
+                newSheet.customProperties.add("syncCollection", collection);
+                await context.sync();
+            }
+        }
+    }).catch(console.error);
 }
 
 // Check if FastAPI is running and connected to MongoDB
@@ -287,6 +340,8 @@ async function runSyncAndFetch() {
         showError("Please select a database collection first.");
         return;
     }
+
+    await ensureTargetSheet(collection);
 
     if (!validateQuerySyntax()) {
         showError("Query filter is not valid JSON.");
@@ -930,6 +985,8 @@ async function importSchema() {
         showError("Select a collection before importing schema.");
         return;
     }
+
+    await ensureTargetSheet(collection);
 
     btnImportSchema.disabled = true;
     btnImportSchema.textContent = "Loading...";
