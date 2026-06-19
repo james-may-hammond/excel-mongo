@@ -171,8 +171,14 @@
                 <input type="text" id="mongo-db-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="my_database" />
             </div>
             <div>
-                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Backend URL</label>
-                <input type="text" id="api-base-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="https://localhost:8000" />
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Backend Configuration</label>
+                <div class="flex items-center gap-3 mb-3">
+                    <input type="checkbox" id="use-custom-backend-checkbox" class="w-5 h-5 border-2 border-black accent-[#FFD300]" />
+                    <label for="use-custom-backend-checkbox" class="font-label-mono text-label-mono uppercase text-on-surface-variant cursor-pointer">Use local / custom server</label>
+                </div>
+                <div id="custom-backend-container" class="hidden">
+                    <input type="text" id="api-base-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="http://localhost:8000" />
+                </div>
             </div>
             <button id="btn-login" class="w-full bg-primary-container border-border-width border-black p-5 font-headline-lg text-[20px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all mt-8">
                 <span class="btn-text">Connect & Load</span>

@@ -87,8 +87,20 @@ Office.onReady(async (info) => {
         const savedApiBase = Office.context.document.settings.get("ApiBase");
         if (savedApiBase) {
             API_BASE = savedApiBase;
+            document.getElementById("api-base-input").value = API_BASE;
+            document.getElementById("use-custom-backend-checkbox").checked = true;
+            document.getElementById("custom-backend-container").classList.remove("hidden");
+        } else {
+            document.getElementById("api-base-input").value = "";
         }
-        document.getElementById("api-base-input").value = API_BASE;
+        
+        document.getElementById('use-custom-backend-checkbox').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                document.getElementById('custom-backend-container').classList.remove('hidden');
+            } else {
+                document.getElementById('custom-backend-container').classList.add('hidden');
+            }
+        });
         
         if (currentMongoUri && currentMongoDb) {
             document.getElementById('login-view').classList.add('hidden');
@@ -1323,8 +1335,13 @@ document.getElementById('btn-login').addEventListener('click', async () => {
         return;
     }
     
-    if (userApiBase) {
+    const useUserApiBase = document.getElementById('use-custom-backend-checkbox').checked;
+    let userApiBase = useUserApiBase ? document.getElementById('api-base-input').value.trim() : "";
+    
+    if (useUserApiBase && userApiBase) {
         API_BASE = userApiBase.replace(/\/+$/, "");
+    } else {
+        API_BASE = (window.EXCEL_MONGO_CONFIG && window.EXCEL_MONGO_CONFIG.apiBase) || window.location.origin;
     }
     
     errEl.classList.add('hidden');
@@ -1345,8 +1362,10 @@ document.getElementById('btn-login').addEventListener('click', async () => {
         
         Office.context.document.settings.set("MongoUri", uri);
         Office.context.document.settings.set("MongoDb", dbName);
-        if (userApiBase) {
+        if (useUserApiBase && userApiBase) {
             Office.context.document.settings.set("ApiBase", API_BASE);
+        } else {
+            Office.context.document.settings.remove("ApiBase");
         }
         Office.context.document.settings.saveAsync();
         
