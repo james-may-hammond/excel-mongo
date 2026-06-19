@@ -7,28 +7,44 @@ function onOpen() {
 
 function showSidebar() {
   var html = HtmlService.createHtmlOutputFromFile('Sidebar')
-      .setTitle('MongoDB Sync')
-      .setWidth(350);
-  SpreadsheetApp.getUi().showSidebar(html);
+      .setWidth(600)
+      .setHeight(750);
+  SpreadsheetApp.getUi().showModelessDialog(html, 'MongoDB Sync');
 }
 
 function getSettings() {
   var documentProperties = PropertiesService.getDocumentProperties();
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var sheetId = sheet ? sheet.getSheetId() : 'global';
   return {
     MongoUri: documentProperties.getProperty('MongoUri') || '',
     MongoDb: documentProperties.getProperty('MongoDb') || '',
-    syncCollection: documentProperties.getProperty('syncCollection') || '',
-    syncQuery: documentProperties.getProperty('syncQuery') || ''
+    syncCollection: documentProperties.getProperty(sheetId + '_syncCollection') || '',
+    syncQuery: documentProperties.getProperty(sheetId + '_syncQuery') || '',
+    sheetId: sheetId
   };
 }
 
 function saveSettings(settings) {
   var documentProperties = PropertiesService.getDocumentProperties();
-  for (var key in settings) {
-    if (settings[key] !== undefined && settings[key] !== null) {
-      documentProperties.setProperty(key, settings[key]);
-    }
-  }
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var sheetId = sheet ? sheet.getSheetId() : 'global';
+  
+  if (settings.MongoUri !== undefined) documentProperties.setProperty('MongoUri', settings.MongoUri);
+  if (settings.MongoDb !== undefined) documentProperties.setProperty('MongoDb', settings.MongoDb);
+  if (settings.syncCollection !== undefined) documentProperties.setProperty(sheetId + '_syncCollection', settings.syncCollection);
+  if (settings.syncQuery !== undefined) documentProperties.setProperty(sheetId + '_syncQuery', settings.syncQuery);
+}
+
+function getActiveSheetState() {
+  var sheet = SpreadsheetApp.getActiveSheet();
+  var sheetId = sheet ? sheet.getSheetId() : 'global';
+  var documentProperties = PropertiesService.getDocumentProperties();
+  return {
+    sheetId: sheetId,
+    syncCollection: documentProperties.getProperty(sheetId + '_syncCollection') || '',
+    syncQuery: documentProperties.getProperty(sheetId + '_syncQuery') || ''
+  };
 }
 
 function getSheetData() {

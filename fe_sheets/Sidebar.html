@@ -1230,6 +1230,7 @@ const API_BASE = "https://excel-mongo-api.up.railway.app";
 
 let currentMongoUri = "";
 let currentMongoDb = "";
+let currentSheetId = null;
 
 function getAuthHeaders(existingHeaders = {}) {
     return {
@@ -1355,10 +1356,27 @@ async function initApp() {
     if (isApiOnline) await loadCollections();
     
     // Register workbook activation event and load current state
-    
     await loadSheetState();
-    
     await refreshSchemaBar();
+
+    // Start background polling for sheet changes
+    setInterval(async () => {
+        if (!isApiOnline) return;
+        try {
+            const state = await runGoogleScript('getActiveSheetState');
+            if (currentSheetId !== null && state.sheetId !== currentSheetId) {
+                currentSheetId = state.sheetId;
+                
+                // Sheet changed, reload state and UI
+                await loadSheetState();
+                await refreshSchemaBar();
+            } else if (currentSheetId === null) {
+                currentSheetId = state.sheetId;
+            }
+        } catch (e) {
+            console.error("Polling error", e);
+        }
+    }, 2000);
 }
 
 async function saveSheetState() {
@@ -1370,6 +1388,7 @@ async function saveSheetState() {
 async function loadSheetState() {
     try {
         const settings = await runGoogleScript('getSettings');
+        if (settings.sheetId) currentSheetId = settings.sheetId;
         if (settings.syncCollection) collectionSelect.value = settings.syncCollection;
         if (settings.syncQuery) {
             queryInput.value = settings.syncQuery;

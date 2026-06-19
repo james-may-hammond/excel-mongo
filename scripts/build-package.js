@@ -7,7 +7,17 @@ const sourceFe = path.join(root, "fe");
 const localUrl = "https://localhost:8000";
 
 function requiredUrl(name) {
-    const value = process.env[name];
+    let value = process.env[name];
+    
+    // Auto-detect Vercel deployment URLs
+    if (name === "ADDIN_PUBLIC_URL" && !value) {
+        if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+            value = "https://" + process.env.VERCEL_PROJECT_PRODUCTION_URL;
+        } else if (process.env.VERCEL_URL) {
+            value = "https://" + process.env.VERCEL_URL;
+        }
+    }
+
     if (!value) {
         throw new Error(`${name} is required. Example: ${name}=https://excel-mongo.example.com npm run package`);
     }
@@ -16,7 +26,7 @@ function requiredUrl(name) {
     try {
         parsed = new URL(value);
     } catch {
-        throw new Error(`${name} must be a valid URL.`);
+        throw new Error(`${name} must be a valid URL. Received: ${value}`);
     }
 
     if (parsed.protocol !== "https:") {

@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from be.routes.health import router as health_router
 from be.routes.insert import router as insertion_router
@@ -39,8 +38,6 @@ app.include_router(stream_fetch_router)
 app.include_router(bulk_router)
 app.include_router(delete_router)
 app.include_router(create_router)
-# Serve the static files for the Excel Task Pane GUI
-app.mount("/fe", StaticFiles(directory=ROOT_DIR / "fe"), name="fe")
 
 @app.get("/")
 async def root():
