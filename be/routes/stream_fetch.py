@@ -26,6 +26,7 @@ async def stream_fetch(request: FetchRequest, db: AgnosticDatabase = Depends(get
                 
             async for doc in cursor.batch_size(1000):
                 doc["_id"] = str(doc["_id"])
+                doc.pop("__v", None)
                 yield json.dumps(doc) + "\n"
                 
                 count += 1

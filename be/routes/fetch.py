@@ -16,7 +16,9 @@ async def fetch(request: FetchRequest, db: AgnosticDatabase = Depends(get_db)):
 
         # Cap the maximum returned records to 1000 to keep Excel snappy
         records = await collection.find(request.filters).limit(1000).to_list(length=1000)
-        for record in records: record["_id"] = str(record["_id"])
+        for record in records: 
+            record["_id"] = str(record["_id"])
+            record.pop("__v", None)
 
         return {
             "status": "success",

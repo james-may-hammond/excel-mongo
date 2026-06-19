@@ -1,10 +1,24 @@
 // Config: everything served from https://localhost:8000 (mkcert cert trusted by WKWebView)
 const API_BASE = "https://localhost:8000";
 
+let currentMongoUri = "";
+let currentMongoDb = "";
+
+function getAuthHeaders(existingHeaders = {}) {
+    return {
+        "X-Mongo-URI": currentMongoUri,
+        "X-Mongo-DB": currentMongoDb,
+        ...existingHeaders
+    };
+}
+
 // Fetch with a timeout so we fail fast instead of hanging
-async function fetchWithTimeout(url, options = {}, timeoutMs = 6000) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 60000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    
+    options.headers = getAuthHeaders(options.headers || {});
+    
     try {
         const res = await fetch(url, { ...options, signal: controller.signal });
         return res;
@@ -21,6 +35,7 @@ const btnImportSchema = document.getElementById("btn-import-schema");
 const schemaBar = document.getElementById("schema-bar");
 const schemaBarFields = document.getElementById("schema-bar-fields");
 const queryInput = document.getElementById("query-input");
+const limitInput = document.getElementById("limit-input");
 const jsonValidity = document.getElementById("json-validity");
 const btnRun = document.getElementById("btn-run");
 const btnText = btnRun.querySelector(".btn-text");
@@ -34,6 +49,10 @@ const statUpdated = document.getElementById("stat-updated");
 // State
 let isApiOnline = false;
 let currentSchema = []; // field names currently in the sheet's row 1
+
+// Sync Control State
+let isSyncCancelled = false;
+let activeAbortController = null;
 
 // ── Query Builder State ──
 let guiLogic = 'and';       // 'and' | 'or'
@@ -55,9 +74,24 @@ const GUI_OPERATORS = [
 ];
 
 // Initialize Add-in
-Office.onReady((info) => {
+Office.onReady(async (info) => {
     if (info.host === Office.HostType.Excel) {
-        initApp();
+        // Automatically open the taskpane next time this document is opened
+        Office.context.document.settings.set("Office.AutoShowTaskpaneWithDocument", true);
+        Office.context.document.settings.saveAsync();
+
+        // Restore credentials
+        currentMongoUri = Office.context.document.settings.get("MongoUri") || "";
+        currentMongoDb = Office.context.document.settings.get("MongoDb") || "";
+        
+        if (currentMongoUri && currentMongoDb) {
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('app-view').classList.remove('hidden');
+            await initApp();
+        } else {
+            document.getElementById('login-view').classList.remove('hidden');
+            document.getElementById('app-view').classList.add('hidden');
+        }
     }
 });
 
@@ -66,7 +100,10 @@ async function initApp() {
     // Collection controls
     btnRefreshCollections.addEventListener('click', loadCollections);
     btnImportSchema.addEventListener('click', importSchema);
-    collectionSelect.addEventListener('change', onCollectionChange);
+    collectionSelect.addEventListener('change', () => {
+        onCollectionChange();
+        saveSheetState();
+    });
 
     // Query builder controls
     document.getElementById('tab-builder').addEventListener('click', () => switchQueryMode('builder'));
@@ -76,14 +113,65 @@ async function initApp() {
     document.getElementById('btn-logic-or').addEventListener('click',  () => setGuiLogic('or'));
 
     // JSON textarea
-    queryInput.addEventListener('input', validateQuerySyntax);
+    queryInput.addEventListener('input', () => {
+        validateQuerySyntax();
+        saveSheetState();
+    });
 
-    // Main button
+    // Main buttons
     btnRun.addEventListener('click', runSyncAndFetch);
+    const btnDelete = document.getElementById('btn-delete');
+    if (btnDelete) {
+        btnDelete.addEventListener('click', runDeleteSelected);
+    }
 
     // Boot sequence
     await checkApiHealth();
     if (isApiOnline) await loadCollections();
+    
+    // Register workbook activation event and load current state
+    await Excel.run(async (context) => {
+        context.workbook.worksheets.onActivated.add(onWorksheetActivated);
+        await context.sync();
+    }).catch(console.error);
+    await loadSheetState();
+    
+    await refreshSchemaBar();
+}
+
+async function saveSheetState() {
+    const col = collectionSelect.value || "";
+    const query = queryInput.value || "";
+    
+    await Excel.run(async (context) => {
+        const sheet = context.workbook.worksheets.getActiveWorksheet();
+        sheet.customProperties.add("syncCollection", col);
+        sheet.customProperties.add("syncQuery", query);
+        await context.sync();
+    }).catch(console.error);
+}
+
+async function loadSheetState() {
+    await Excel.run(async (context) => {
+        const sheet = context.workbook.worksheets.getActiveWorksheet();
+        const colProp = sheet.customProperties.getItemOrNullObject("syncCollection");
+        const queryProp = sheet.customProperties.getItemOrNullObject("syncQuery");
+        colProp.load("value");
+        queryProp.load("value");
+        await context.sync();
+        
+        if (!colProp.isNullObject && colProp.value) {
+            collectionSelect.value = colProp.value;
+        }
+        if (!queryProp.isNullObject && queryProp.value) {
+            queryInput.value = queryProp.value;
+            validateQuerySyntax();
+        }
+    }).catch(console.error);
+}
+
+async function onWorksheetActivated(event) {
+    await loadSheetState();
     await refreshSchemaBar();
 }
 
@@ -98,6 +186,7 @@ async function checkApiHealth() {
             isApiOnline = true;
             updateStatus("online", "Connected to Mongo");
             btnRun.disabled = false;
+            if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = false;
         } else {
             throw new Error("Health check returned status " + data.status);
         }
@@ -105,6 +194,7 @@ async function checkApiHealth() {
         isApiOnline = false;
         updateStatus("offline", "API Offline");
         btnRun.disabled = true;
+        if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = true;
         const msg = err.name === "AbortError"
             ? "Connection timed out. Make sure ./run.sh is running in your terminal."
             : "Backend API is offline. Run ./run.sh in your terminal first.";
@@ -161,6 +251,7 @@ function validateQuerySyntax() {
         jsonValidity.className = "validity-indicator empty";
         jsonValidity.textContent = "Empty (Fetch All)";
         btnRun.disabled = !isApiOnline;
+        if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = !isApiOnline;
         return true;
     }
     
@@ -172,11 +263,13 @@ function validateQuerySyntax() {
         jsonValidity.className = "validity-indicator valid";
         jsonValidity.textContent = "Valid Filter JSON";
         btnRun.disabled = !isApiOnline;
+        if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = !isApiOnline;
         return true;
     } catch (err) {
         jsonValidity.className = "validity-indicator invalid";
         jsonValidity.textContent = "Invalid JSON";
         btnRun.disabled = true;
+        if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = true;
         return false;
     }
 }
@@ -189,7 +282,6 @@ async function runSyncAndFetch() {
         return;
     }
 
-    // Double check syntax validation
     if (!validateQuerySyntax()) {
         showError("Query filter is not valid JSON.");
         return;
@@ -197,113 +289,405 @@ async function runSyncAndFetch() {
 
     setLoading(true);
     hideFeedback();
+    
+    isSyncCancelled = false;
+    activeAbortController = new AbortController();
+
+    const actionContainer = document.getElementById("action-buttons-container");
+    const btnStopContainer = document.getElementById("btn-stop-container");
+    const btnStop = document.getElementById("btn-stop");
+    
+    if (actionContainer) actionContainer.classList.add("hidden");
+    if (btnStopContainer) btnStopContainer.classList.remove("hidden");
+    if (btnStop) {
+        btnStop.disabled = false;
+        btnStop.querySelector(".btn-text").textContent = "Stop Sync";
+        btnStop.onclick = () => {
+            isSyncCancelled = true;
+            if (activeAbortController) activeAbortController.abort();
+            btnStop.querySelector(".btn-text").textContent = "Stopping...";
+            btnStop.disabled = true;
+        };
+    }
+    
+    let expectedTotal = 1000000;
+    let inserted = 0;
+    let updated = 0;
+    let totalFetched = 0;
+    try {
+        const countRes = await fetchWithTimeout(`${API_BASE}/schema?collection=${encodeURIComponent(collection)}`);
+        if (countRes.ok) {
+            const countData = await countRes.json();
+            expectedTotal = countData.total_count || 1000000;
+        }
+    } catch (e) {}
+
+    updateProgress("Reading Excel data...", 0);
 
     try {
-        // 1. Read sheet data to prepare inserts/updates
+        // Suspend auto-calculation and events for extreme performance boost
+        await Excel.run(async (context) => {
+            context.runtime.enableEvents = false;
+            context.workbook.application.calculationMode = Excel.CalculationMode.manual;
+            await context.sync();
+        }).catch(() => {});
+
         const rawSheetData = await getSheetData();
         const syncPayload = parseSheetData(rawSheetData);
 
-        // Guard: if there are new rows to insert but no schema in row 1, block it
         if (syncPayload.inserts.length > 0 && currentSchema.length === 0) {
-            showError(
-                "Cannot insert: no schema found in the sheet. " +
-                "Click '⬇ Schema' to import the collection's schema first, " +
-                "or run a Sync & Fetch to load existing data."
-            );
+            showError("Cannot insert: no schema found in the sheet. Click '⬇ Schema' to import first.");
             setLoading(false);
+            hideProgress();
             return;
         }
         
-        let inserted = 0;
-        let updated = 0;
+        let conflicts = [];
 
-        // 2. Perform Sync if sheets had records (using backend /insert and /update endpoints)
         if (syncPayload.inserts.length > 0 || syncPayload.updates.length > 0) {
-            const insertPromises = syncPayload.inserts.map(async (doc) => {
-                const res = await fetchWithTimeout(`${API_BASE}/insert`, {
+            const chunkSize = 1000;
+            const totalTasks = syncPayload.inserts.length + syncPayload.updates.length;
+            let completedTasks = 0;
+            
+            for (let i = 0; i < syncPayload.inserts.length; i += chunkSize) {
+                if (isSyncCancelled) break;
+                const chunk = syncPayload.inserts.slice(i, i + chunkSize);
+                updateProgress(
+                    `Bulk inserting ${completedTasks + chunk.length} / ${totalTasks}...`,
+                    ((completedTasks + chunk.length) / totalTasks) * 100
+                );
+                const res = await fetchWithTimeout(`${API_BASE}/bulk_insert`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        collection: collection,
-                        data: doc
-                    })
+                    body: JSON.stringify({ collection, data: chunk })
                 });
                 const data = await res.json();
-                if (!res.ok) {
-                    throw new Error(data.detail || "Insert failed");
-                }
-                return true;
-            });
+                if (!res.ok) throw new Error(data.detail || "Bulk insert failed");
+                inserted += data.inserted || 0;
+                completedTasks += chunk.length;
+            }
 
-            const updatePromises = syncPayload.updates.map(async (doc) => {
-                const docId = doc._id;
-                const docData = { ...doc };
-                delete docData._id;
-
-                const res = await fetchWithTimeout(`${API_BASE}/update`, {
+            for (let i = 0; i < syncPayload.updates.length; i += chunkSize) {
+                if (isSyncCancelled) break;
+                const chunk = syncPayload.updates.slice(i, i + chunkSize);
+                updateProgress(
+                    `Bulk updating ${completedTasks + chunk.length} / ${totalTasks}...`,
+                    ((completedTasks + chunk.length) / totalTasks) * 100
+                );
+                const res = await fetchWithTimeout(`${API_BASE}/bulk_update`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        collection: collection,
-                        id: docId,
-                        data: docData
-                    })
+                    body: JSON.stringify({ collection, data: chunk })
                 });
                 const data = await res.json();
-                if (!res.ok) {
-                    throw new Error(data.detail || "Update failed");
-                }
-                return true;
-            });
+                if (!res.ok) throw new Error(data.detail || "Bulk update failed");
+                updated += data.updated || 0;
+                if (data.conflicts) conflicts.push(...data.conflicts);
+                completedTasks += chunk.length;
+            }
 
-            await Promise.all([...insertPromises, ...updatePromises]);
-            inserted = syncPayload.inserts.length;
-            updated = syncPayload.updates.length;
+            if (conflicts.length > 0) {
+                await Excel.run(async (context) => {
+                    const sheet = context.workbook.worksheets.getActiveWorksheet();
+                    conflicts.forEach(c => {
+                        if (c._rowIndex !== undefined) {
+                            const range = sheet.getRangeByIndexes(c._rowIndex, 0, 1, currentSchema.length || 10);
+                            range.format.fill.color = "#FFCCCC";
+                        }
+                    });
+                    await context.sync();
+                });
+                showError(`${conflicts.length} conflict(s) detected. Conflicting rows are red. Sync again to overwrite with server data.`);
+                setLoading(false);
+                hideProgress();
+                return;
+            }
         }
 
-
-        // 3. Fetch data matching query filters
+        updateProgress("Connecting to fetch stream...", 0);
         let filters = {};
-        if (queryInput.value.trim()) {
-            filters = JSON.parse(queryInput.value.trim());
-        }
+        if (queryInput.value.trim()) filters = JSON.parse(queryInput.value.trim());
 
-        const fetchRes = await fetchWithTimeout(`${API_BASE}/fetch`, {
+        const fetchRes = await fetch(`${API_BASE}/stream_fetch`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                collection: collection,
-                filters: filters
-            })
+            headers: getAuthHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ collection, filters, limit: parseInt(limitInput.value) || 0 }),
+            signal: activeAbortController.signal
         });
-        const fetchData = await fetchRes.json();
         
-        if (!fetchRes.ok) {
-            throw new Error(fetchData.detail || "Fetch query failed on backend");
+        if (!fetchRes.ok) throw new Error("Stream fetch failed");
+
+        const reader = fetchRes.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+        
+        const BATCH_SIZE = 5000;
+        let currentBatch = [];
+        let startRow = 1; 
+        let headersKnown = false;
+        let headers = ["_id"];
+        let baseSheetName = collection;
+
+        while (!isSyncCancelled) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            
+            let lines = buffer.split("\n");
+            buffer = lines.pop(); 
+            
+            for (let line of lines) {
+                if (line.trim()) {
+                    const doc = JSON.parse(line);
+                    if (doc._error) throw new Error(doc._error);
+                    currentBatch.push(doc);
+                    totalFetched++;
+                }
+            }
+            
+            while (currentBatch.length >= BATCH_SIZE) {
+                const chunkToProcess = currentBatch.slice(0, BATCH_SIZE);
+                currentBatch = currentBatch.slice(BATCH_SIZE);
+                
+                if (!headersKnown) {
+                    const hs = new Set(["_id"]);
+                    chunkToProcess.forEach(r => Object.keys(r).forEach(k => hs.add(k)));
+                    headers = Array.from(hs);
+                    headersKnown = true;
+                }
+                updateProgress(
+                    `Rendering ${totalFetched - currentBatch.length} / ${expectedTotal} records...`,
+                    ((totalFetched - currentBatch.length) / expectedTotal) * 100
+                );
+                startRow = await appendDataToSheet(baseSheetName, chunkToProcess, headers, startRow);
+                
+                // Yield to garbage collector and UI renderer to prevent browser crash
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
         }
 
-        const records = fetchData.data || [];
-        
-        // 4. Overwrite worksheet with fetched records
-        await writeDataToSheet(records);
+        if (currentBatch.length > 0) {
+            if (!headersKnown) {
+                const hs = new Set(["_id"]);
+                currentBatch.forEach(r => Object.keys(r).forEach(k => hs.add(k)));
+                headers = Array.from(hs);
+            }
+            updateProgress(
+                `Rendering final ${currentBatch.length} records...`,
+                (totalFetched / expectedTotal) * 100
+            );
+            startRow = await appendDataToSheet(baseSheetName, currentBatch, headers, startRow);
+        }
 
-        // 5. Refresh schema bar to show updated headers
+        // If totalFetched is 0, we still clear the sheet
+        if (totalFetched === 0) {
+            await Excel.run(async (context) => {
+                const sheet = context.workbook.worksheets.getActiveWorksheet();
+                try { sheet.getUsedRange().clear(); await context.sync(); } catch(e){}
+            });
+        }
+
         await refreshSchemaBar();
 
-        // 6. Present statistics
         showSuccess(
-            records.length > 0 
-                ? `Sync process complete! Loaded ${records.length} records into the sheet.`
-                : `Sync complete. No records matched the query. Excel sheet cleared.`,
-            records.length,
-            inserted,
-            updated
+            isSyncCancelled
+                ? `Sync stopped by user. Loaded ${totalFetched} records.`
+                : (totalFetched > 0 
+                    ? `Sync process complete! Loaded ${totalFetched} records into the sheet(s).`
+                    : `Sync complete. No records matched the query.`),
+            totalFetched, inserted, updated
         );
     } catch (error) {
-        showError("Execution failed: " + error.message);
+        if (error.name === "AbortError" || isSyncCancelled) {
+            showSuccess(`Sync stopped by user. Loaded ${totalFetched} records.`, totalFetched, inserted, updated);
+        } else {
+            showError("Execution failed: " + error.message);
+        }
     } finally {
+        if (actionContainer) actionContainer.classList.remove("hidden");
+        const stopContainer = document.getElementById("btn-stop-container");
+        if (stopContainer) stopContainer.classList.add("hidden");
+        // Restore auto-calculation and events
+        await Excel.run(async (context) => {
+            context.runtime.enableEvents = true;
+            context.workbook.application.calculationMode = Excel.CalculationMode.automatic;
+            await context.sync();
+        }).catch(() => {});
+        
         setLoading(false);
+        hideProgress();
     }
+}
+
+// --- Delete Selected Functionality ---
+async function runDeleteSelected() {
+    const collection = collectionSelect.value;
+    if (!collection) {
+        showError("Please select a database collection first.");
+        return;
+    }
+
+    if (!currentSchema || currentSchema.length === 0) {
+        showError("No schema loaded. Please load data or click '⬇ Schema' first to ensure we can map IDs.");
+        return;
+    }
+
+    const idIndex = currentSchema.indexOf("_id");
+    if (idIndex === -1) {
+        showError("Could not find the '_id' column in the current schema. Cannot delete without IDs.");
+        return;
+    }
+
+    const btnDelete = document.getElementById('btn-delete');
+    const deleteText = btnDelete.querySelector(".btn-text");
+    const deleteSpinner = btnDelete.querySelector(".btn-spinner");
+
+    deleteText.textContent = "Deleting...";
+    deleteSpinner.classList.remove("hidden");
+    btnDelete.disabled = true;
+    hideFeedback();
+
+    try {
+        let selectedIds = [];
+        let rowsToClear = [];
+
+        await Excel.run(async (context) => {
+            const sheet = context.workbook.worksheets.getActiveWorksheet();
+            const selectedRange = context.workbook.getSelectedRange();
+            selectedRange.load(["rowIndex", "rowCount"]);
+            await context.sync();
+
+            const startRow = selectedRange.rowIndex;
+            const rowCount = selectedRange.rowCount;
+
+            // Load just the _id column for the selected rows
+            const idRange = sheet.getRangeByIndexes(startRow, idIndex, rowCount, 1);
+            idRange.load("values");
+            await context.sync();
+
+            idRange.values.forEach((row, i) => {
+                const idVal = row[0];
+                if (idVal && String(idVal).trim() !== "" && String(idVal).trim() !== "_id") {
+                    selectedIds.push(String(idVal).trim());
+                    rowsToClear.push(startRow + i);
+                }
+            });
+        });
+
+        if (selectedIds.length === 0) {
+            showError("No valid records selected. Make sure you select cells belonging to rows with an '_id'.");
+            return;
+        }
+
+        const confirmDelete = await customConfirm(`Are you sure you want to delete ${selectedIds.length} record(s)? This cannot be undone.`);
+        if (!confirmDelete) {
+            showSuccess("Delete cancelled.", 0, 0, 0);
+            return;
+        }
+
+        updateProgress("Deleting from server...", 50);
+
+        const res = await fetchWithTimeout(`${API_BASE}/bulk_delete`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ collection, ids: selectedIds })
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.detail || "Bulk delete failed");
+
+        updateProgress("Clearing rows from sheet...", 90);
+
+        await Excel.run(async (context) => {
+            const sheet = context.workbook.worksheets.getActiveWorksheet();
+            for (let rIndex of rowsToClear) {
+                sheet.getRangeByIndexes(rIndex, 0, 1, currentSchema.length).clear();
+            }
+            await context.sync();
+        });
+
+        showSuccess(`Successfully deleted ${data.deleted_count || selectedIds.length} record(s).`, 0, 0, 0);
+
+    } catch (error) {
+        showError("Delete failed: " + error.message);
+    } finally {
+        deleteText.textContent = "Delete Selected";
+        deleteSpinner.classList.add("hidden");
+        btnDelete.disabled = false;
+        hideProgress();
+    }
+}
+
+// Custom Confirm Dialog for Office.js
+function customConfirm(message) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.zIndex = '9999';
+
+        const dialog = document.createElement('div');
+        dialog.style.backgroundColor = 'var(--color-surface, #fff)';
+        dialog.style.padding = '20px';
+        dialog.style.borderRadius = '8px';
+        dialog.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+        dialog.style.maxWidth = '85%';
+        dialog.style.textAlign = 'center';
+
+        const text = document.createElement('p');
+        text.textContent = message;
+        text.style.marginBottom = '20px';
+        text.style.color = 'var(--color-text, #333)';
+        text.style.fontWeight = '500';
+
+        const btnContainer = document.createElement('div');
+        btnContainer.style.display = 'flex';
+        btnContainer.style.gap = '10px';
+        btnContainer.style.justifyContent = 'center';
+
+        const btnCancel = document.createElement('button');
+        btnCancel.textContent = 'Cancel';
+        btnCancel.style.padding = '8px 16px';
+        btnCancel.style.border = '1px solid var(--color-border, #ccc)';
+        btnCancel.style.borderRadius = '4px';
+        btnCancel.style.background = 'transparent';
+        btnCancel.style.cursor = 'pointer';
+        btnCancel.style.flex = '1';
+
+        const btnOk = document.createElement('button');
+        btnOk.textContent = 'Delete';
+        btnOk.style.padding = '8px 16px';
+        btnOk.style.border = '1px solid #E02424';
+        btnOk.style.borderRadius = '4px';
+        btnOk.style.backgroundColor = '#E02424';
+        btnOk.style.color = '#fff';
+        btnOk.style.cursor = 'pointer';
+        btnOk.style.flex = '1';
+
+        btnCancel.onclick = () => {
+            document.body.removeChild(overlay);
+            resolve(false);
+        };
+
+        btnOk.onclick = () => {
+            document.body.removeChild(overlay);
+            resolve(true);
+        };
+
+        btnContainer.appendChild(btnCancel);
+        btnContainer.appendChild(btnOk);
+        dialog.appendChild(text);
+        dialog.appendChild(btnContainer);
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+    });
 }
 
 // Read sheet values using Office.js
@@ -340,7 +724,7 @@ function parseSheetData(sheetData) {
 
     const idIndex = headers.indexOf("_id");
 
-    dataRows.forEach(row => {
+    dataRows.forEach((row, rowIndex) => {
         // Skip empty rows
         if (row.every(cell => cell === "" || cell === null || cell === undefined)) {
             return;
@@ -369,6 +753,7 @@ function parseSheetData(sheetData) {
 
         // Only sync if there is some useful cell data
         if (hasData || doc["_id"]) {
+            doc._rowIndex = rowIndex + 1;
             if (doc["_id"]) {
                 payload.updates.push(doc);
             } else {
@@ -380,65 +765,80 @@ function parseSheetData(sheetData) {
     return payload;
 }
 
-// Overwrite the current active worksheet
-async function writeDataToSheet(records) {
+// Overwrite the current active worksheet incrementally
+async function appendDataToSheet(baseSheetName, records, headers, globalStartRow) {
+    if (records.length === 0) return globalStartRow;
+
+    const EXCEL_LIMIT = 1000000;
+    
+    const sheetIndex = Math.floor((globalStartRow - 1) / EXCEL_LIMIT) + 1;
+    let localStartRow = ((globalStartRow - 1) % EXCEL_LIMIT) + 1;
+
     await Excel.run(async (context) => {
-        const sheet = context.workbook.worksheets.getActiveWorksheet();
+        let sheet;
         
-        // Safely clear sheet before rewriting
-        try {
-            const usedRange = sheet.getUsedRange();
-            usedRange.clear();
+        if (sheetIndex === 1) {
+            sheet = context.workbook.worksheets.getActiveWorksheet();
+        } else {
+            const sheetName = `${baseSheetName}_${sheetIndex}`;
+            sheet = context.workbook.worksheets.getItemOrNullObject(sheetName);
             await context.sync();
-        } catch (err) {
-            // Sheet is already clear
+            
+            if (sheet.isNullObject) {
+                sheet = context.workbook.worksheets.add(sheetName);
+                sheet.activate();
+                await context.sync();
+            }
         }
 
-        if (records.length === 0) {
-            return;
+        if (localStartRow === 1) {
+            try {
+                sheet.getUsedRange().clear();
+                await context.sync();
+            } catch(e) {}
+            
+            const hr = sheet.getRangeByIndexes(0, 0, 1, headers.length);
+            hr.values = [headers];
+            hr.format.fill.color = "#5BAD7F";
+            hr.format.font.color = "#FFFFFF";
+            hr.format.font.bold = true;
+            
+            const vIndex = headers.indexOf("__v");
+            if (vIndex !== -1) {
+                sheet.getRangeByIndexes(0, vIndex, 1, 1).columnHidden = true;
+            }
+            await context.sync();
         }
 
-        // Dynamically compile headers from records (putting _id first)
-        const headerSet = new Set();
-        headerSet.add("_id");
-        records.forEach(rec => {
-            Object.keys(rec).forEach(key => headerSet.add(key));
-        });
-        const headers = Array.from(headerSet);
-
-        // Build values array
-        const values = [headers];
+        const values = [];
         records.forEach(rec => {
             const row = [];
             headers.forEach(h => {
                 let cell = rec[h];
-                if (cell !== null && typeof cell === "object") {
-                    cell = JSON.stringify(cell);
-                } else if (cell === undefined) {
-                    cell = "";
-                }
+                if (cell !== null && typeof cell === "object") cell = JSON.stringify(cell);
+                else if (cell === undefined) cell = "";
                 row.push(cell);
             });
             values.push(row);
         });
 
-        // Set cells range starting at A1 (0, 0)
-        const rowCount = values.length;
-        const colCount = headers.length;
-        const range = sheet.getRangeByIndexes(0, 0, rowCount, colCount);
+        const range = sheet.getRangeByIndexes(localStartRow, 0, values.length, headers.length);
         range.values = values;
+        
+        const vIndex = headers.indexOf("__v");
+        if (vIndex !== -1) {
+            sheet.getRangeByIndexes(localStartRow, vIndex, values.length, 1).columnHidden = true;
+        }
 
-        // Header styles (MongoDB Dark Green theme)
-        const headerRange = sheet.getRangeByIndexes(0, 0, 1, colCount);
-        headerRange.format.fill.color = "#5BAD7F";
-        headerRange.format.font.color = "#FFFFFF";
-        headerRange.format.font.bold = true;
+        if (localStartRow === 1) {
+            range.format.autofitColumns();
+        }
 
-        // Auto format column widths
-        range.format.autofitColumns();
-
+        context.workbook.application.suspendScreenUpdatingUntilNextSync();
         await context.sync();
     });
+
+    return globalStartRow + records.length;
 }
 
 // --- Schema Functions ---
@@ -457,7 +857,7 @@ async function detectSheetSchema() {
             if (!usedRange.values || usedRange.values.length === 0) return [];
             // Row 1 is the header row
             const headers = usedRange.values[0].filter(h => h !== null && h !== "");
-            return headers.map(String);
+            return headers.map(String).filter(h => h !== "__v");
         } catch {
             return [];
         }
@@ -471,14 +871,29 @@ async function detectSheetSchema() {
 async function refreshSchemaBar() {
     const fields = await detectSheetSchema();
     currentSchema = fields;
-    renderSchemaBar(fields);
+    
+    let countText = "";
+    const collection = collectionSelect.value;
+    if (collection && isApiOnline) {
+        try {
+            const res = await fetchWithTimeout(`${API_BASE}/schema?collection=${encodeURIComponent(collection)}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.total_count !== undefined) {
+                    countText = `${data.total_count.toLocaleString()} total records in DB`;
+                }
+            }
+        } catch (e) {}
+    }
+
+    renderSchemaBar(fields, countText);
     refreshConditionFields();
 }
 
 /**
  * Renders the schema field tags inside the schema bar.
  */
-function renderSchemaBar(fields) {
+function renderSchemaBar(fields, countText = "") {
     if (!fields || fields.length === 0) {
         schemaBar.classList.add("hidden");
         return;
@@ -490,6 +905,12 @@ function renderSchemaBar(fields) {
         tag.textContent = f;
         schemaBarFields.appendChild(tag);
     });
+
+    let countEl = document.getElementById('schema-total-records');
+    if (countEl) {
+        countEl.textContent = countText;
+    }
+
     schemaBar.classList.remove("hidden");
 }
 
@@ -739,6 +1160,7 @@ function updateQueryFromGui() {
     queryInput.value = pretty;
     document.getElementById('query-preview-code').textContent = isEmpty ? '{}  // fetch all' : pretty;
     validateQuerySyntax();
+    saveSheetState();
 }
 
 /** When schema updates, rebuild condition field dropdowns in-place */
@@ -771,6 +1193,28 @@ function refreshConditionFields() {
 }
 
 // --- Helpers ---
+function updateProgress(msg, percentage = null) {
+    const el = document.getElementById('progress-text');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+
+    const barContainer = document.getElementById('progress-bar-container');
+    const barFill = document.getElementById('progress-bar-fill');
+    
+    if (percentage !== null) {
+        barContainer.classList.remove('hidden');
+        barFill.style.width = `${Math.min(100, Math.max(0, percentage))}%`;
+    } else {
+        barContainer.classList.add('hidden');
+    }
+}
+
+function hideProgress() {
+    document.getElementById('progress-text').classList.add('hidden');
+    const barContainer = document.getElementById('progress-bar-container');
+    if (barContainer) barContainer.classList.add('hidden');
+}
+
 function updateStatus(className, text) {
     connectionStatus.className = `status-badge ${className}`;
     connectionStatus.querySelector(".status-text").textContent = text;
@@ -795,11 +1239,57 @@ function showSuccess(msg, fetched = 0, inserted = 0, updated = 0) {
     statFetched.textContent = fetched;
     statInserted.textContent = inserted;
     statUpdated.textContent = updated;
-
-    feedbackMessage.className = "feedback-message success";
-    feedbackMessage.textContent = msg;
-    feedbackPanel.classList.remove("hidden");
+    
+    const el = document.getElementById('feedback-message');
+    el.textContent = msg;
+    el.className = 'feedback-message success';
+    document.getElementById('feedback-panel').classList.remove('hidden');
 }
+
+// Login Handler
+document.getElementById('btn-login').addEventListener('click', async () => {
+    const uri = document.getElementById('mongo-uri-input').value.trim();
+    const dbName = document.getElementById('mongo-db-input').value.trim();
+    const errEl = document.getElementById('login-error');
+    const loader = document.getElementById('login-loader');
+    
+    if (!uri || !dbName) {
+        errEl.textContent = "Please fill in both fields.";
+        errEl.classList.remove('hidden');
+        return;
+    }
+    
+    errEl.classList.add('hidden');
+    loader.classList.remove('hidden');
+    document.getElementById('btn-login').disabled = true;
+    
+    currentMongoUri = uri;
+    currentMongoDb = dbName;
+    
+    try {
+        const res = await fetch(`${API_BASE}/health`, {
+            headers: getAuthHeaders()
+        });
+        if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.detail || "Connection failed.");
+        }
+        
+        Office.context.document.settings.set("MongoUri", uri);
+        Office.context.document.settings.set("MongoDb", dbName);
+        Office.context.document.settings.saveAsync();
+        
+        document.getElementById('login-view').classList.add('hidden');
+        document.getElementById('app-view').classList.remove('hidden');
+        await initApp();
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+    } finally {
+        loader.classList.add('hidden');
+        document.getElementById('btn-login').disabled = false;
+    }
+});
 
 function showError(msg) {
     statFetched.textContent = "0";
@@ -807,9 +1297,93 @@ function showError(msg) {
     statUpdated.textContent = "0";
 
     feedbackMessage.className = "feedback-message error";
-    feedbackMessage.textContent = msg;
+    feedbackMessage.textContent = typeof msg === 'object' ? JSON.stringify(msg) : msg;
     feedbackPanel.classList.remove("hidden");
 }
+
+// New Collection UI Logic
+document.getElementById('btn-new-collection').addEventListener('click', () => {
+    document.getElementById('new-collection-container').classList.remove('hidden');
+    document.getElementById('new-collection-input').focus();
+});
+
+document.getElementById('btn-cancel-collection').addEventListener('click', () => {
+    document.getElementById('new-collection-container').classList.add('hidden');
+    document.getElementById('new-collection-input').value = "";
+});
+
+document.getElementById('btn-create-collection').addEventListener('click', async () => {
+    const input = document.getElementById('new-collection-input');
+    const schemaInput = document.getElementById('new-collection-schema');
+    const collName = input.value.trim();
+    const schemaStr = schemaInput.value.trim();
+    if (!collName) return;
+
+    let fields = schemaStr.split(',').map(s => s.trim()).filter(s => s && s !== '_id');
+    fields = ['_id', ...fields];
+
+    const createBtn = document.getElementById('btn-create-collection');
+    createBtn.textContent = "Creating...";
+    createBtn.disabled = true;
+
+    try {
+        const response = await fetch(`${API_BASE}/create_collection`, {
+            method: "POST",
+            headers: getAuthHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ collection: collName })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            document.getElementById('new-collection-container').classList.add('hidden');
+            input.value = "";
+            if(schemaInput) schemaInput.value = "";
+            showSuccess(`Collection '${collName}' created!`);
+            
+            // Reload collections and auto-select
+            await loadCollections();
+            const select = document.getElementById("collection-select");
+            select.value = collName;
+            
+            // Create Excel sheet and write schema
+            await Excel.run(async (context) => {
+                let sheet = context.workbook.worksheets.getItemOrNullObject(collName);
+                await context.sync();
+                
+                if (sheet.isNullObject) {
+                    sheet = context.workbook.worksheets.add(collName);
+                }
+                sheet.activate();
+                sheet.getUsedRange().clear();
+                
+                const range = sheet.getRangeByIndexes(0, 0, 1, fields.length);
+                range.values = [fields];
+                
+                sheet.customProperties.add("syncCollection", collName);
+                sheet.customProperties.add("syncQuery", "{}");
+                
+                range.format.font.bold = true;
+                range.format.fill.color = "#FFD300";
+                range.format.font.color = "black";
+                range.format.borders.getItem('EdgeBottom').style = 'Continuous';
+                range.format.borders.getItem('EdgeBottom').weight = 'Thick';
+                
+                await context.sync();
+            });
+
+            // Manually trigger change to load schema
+            const event = new Event('change');
+            select.dispatchEvent(event);
+        } else {
+            showError(data.detail || "Failed to create collection");
+        }
+    } catch (e) {
+        showError(e.message);
+    } finally {
+        createBtn.textContent = "Create";
+        createBtn.disabled = false;
+    }
+});
 
 function hideFeedback() {
     feedbackPanel.classList.add("hidden");

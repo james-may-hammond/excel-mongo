@@ -1,142 +1,406 @@
 <!DOCTYPE html>
-<html lang="en">
+<html class="dark" lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MongoDB Sync Connector</title>
-    <!-- Modern Google Font -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Main Style Sheet -->
-    <link rel="stylesheet" href="taskpane.css">
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>MongoDB Sync Sidebar</title>
     <!-- Office JS SDK -->
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" type="text/javascript"></script>
+
+    <!-- Tailwind & Fonts -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@500;600;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <!-- Link to our CSS for the JS-generated dynamic rows -->
+    <link rel="stylesheet" href="taskpane.css">
+
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "background": "var(--bg)",
+                        "on-background": "var(--on-bg)",
+                        "surface-container-lowest": "var(--surface-lowest)",
+                        "surface-container-low": "var(--surface-low)",
+                        "surface-variant": "var(--surface-variant)",
+                        "surface-container": "var(--surface-container)",
+                        "on-surface-variant": "var(--on-surface-variant)",
+                        "on-surface": "var(--on-bg)",
+                        "secondary-container": "var(--secondary-container)",
+                        "on-secondary-container": "var(--on-secondary-container)",
+                        "primary-container": "var(--primary-container)",
+                        "tertiary-fixed-dim": "var(--tertiary-dim)",
+                        "on-tertiary-fixed-variant": "var(--on-tertiary-variant)",
+                        "error": "var(--error)",
+                        "error-container": "var(--error-container)"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "border-width": "2px",
+                        "unit": "4px",
+                        "margin": "14px",
+                        "gutter": "10px",
+                        "container-padding": "12px",
+                        "shadow-offset": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-xl": ["Public Sans"],
+                        "data-field": ["JetBrains Mono"],
+                        "label-mono": ["JetBrains Mono"],
+                        "headline-lg": ["Public Sans"],
+                        "body-md": ["Public Sans"]
+                    },
+                    "fontSize": {
+                        "headline-xl": ["32px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "900"}],
+                        "data-field": ["14px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                        "label-mono": ["13px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "headline-lg": ["24px", {"lineHeight": "1.2", "fontWeight": "800"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "500"}]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        :root {
+            --bg: #FDFDFD;
+            --on-bg: #000000;
+            --surface-lowest: #FFFFFF;
+            --surface-low: #F0F0F0;
+            --surface-variant: #E0E0E0;
+            --surface-container: #E8E8E8;
+            --on-surface-variant: #444444;
+            --secondary-container: #F0F0F0;
+            --on-secondary-container: #000000;
+            --primary-container: #FFD300;
+            --tertiary-dim: #006670;
+            --on-tertiary-variant: #006670;
+            --error: #D32F2F;
+            --error-container: #FFCDD2;
+        }
+        html.dark {
+            --bg: #131313;
+            --on-bg: #e2e2e2;
+            --surface-lowest: #0e0e0e;
+            --surface-low: #1b1b1b;
+            --surface-variant: #353535;
+            --surface-container: #1f1f1f;
+            --on-surface-variant: #d1c6ab;
+            --secondary-container: #4a435b;
+            --on-secondary-container: #bbb1cd;
+            --primary-container: #ffd100;
+            --tertiary-dim: #00dbed;
+            --on-tertiary-variant: #004f56;
+            --error: #ffb4ab;
+            --error-container: #93000a;
+        }
+
+        .neo-shadow { box-shadow: 6px 6px 0px 0px #000000; }
+        .neo-shadow-active { box-shadow: 0px 0px 0px 0px #000000; transform: translate(6px, 6px); }
+        .neo-shadow-sm { box-shadow: 4px 4px 0px 0px #000000; }
+        .neo-shadow-hover:hover { box-shadow: 8px 8px 0px 0px #000000; transform: translate(-2px, -2px); }
+        .neo-shadow-hover:active { box-shadow: 0px 0px 0px 0px #000000; transform: translate(6px, 6px); }
+        input:focus, select:focus, textarea:focus { outline: none; background-color: var(--surface-low) !important; }
+        
+        /* Functional States overriding Tailwind */
+        .hidden { display: none !important; }
+        
+        /* Keeping JS Status Badge functionally intact but visually updated */
+        .status-badge { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.75rem; border: 2px solid black; border-radius: 9999px; }
+        .status-badge.checking { background-color: rgba(255, 211, 0, 0.2); }
+        .status-badge.checking .status-text { color: var(--primary-container); font-size: 10px; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 600;}
+        .status-badge.checking .pulse-dot { background-color: var(--primary-container); width: 8px; height: 8px; border-radius: 50%; animation: pulse 1.5s infinite alternate; }
+        
+        .status-badge.online { background-color: rgba(11, 235, 255, 0.2); }
+        .status-badge.online .status-text { color: var(--tertiary-dim); font-size: 10px; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 600;}
+        .status-badge.online .pulse-dot { background-color: var(--tertiary-dim); width: 8px; height: 8px; border-radius: 50%; animation: pulse 1.5s infinite alternate; }
+        
+        .status-badge.offline { background-color: rgba(255, 180, 171, 0.2); }
+        .status-badge.offline .status-text { color: var(--error); font-size: 10px; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 600;}
+        .status-badge.offline .pulse-dot { background-color: var(--error); width: 8px; height: 8px; border-radius: 50%; animation: pulse 1.5s infinite alternate; }
+
+        @keyframes pulse { 0% { opacity: 0.4; } 100% { opacity: 1; transform: scale(1.25); } }
+
+        /* Dynamic Schema Bar Tags */
+        .schema-field-tag { background-color: var(--surface-variant); border: 2px solid black; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px; font-family: 'JetBrains Mono'; font-size: 11px; color: var(--on-bg); }
+        .schema-field-tag.id-field { background-color: var(--primary-container); color: black; font-weight: 900; }
+
+        /* Spinner for buttons */
+        .btn-spinner { width: 18px; height: 18px; border: 3px solid rgba(0,0,0,0.2); border-top: 3px solid #000; border-radius: 50%; animation: spin 0.75s linear infinite; display: inline-block; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Ensure query builder JS elements match */
+        .cond-select, .cond-input { 
+            background: var(--surface-lowest); color: var(--on-bg); border: 2px solid #000; padding: 10px; font-family: 'JetBrains Mono'; font-size: 13px; font-weight: 600; box-shadow: 4px 4px 0px #000; transition: all 0.1s ease; outline: none; margin-bottom: 6px; 
+        }
+        .cond-select:focus, .cond-input:focus { border-color: var(--primary-container); box-shadow: 4px 4px 0px var(--primary-container); }
+        .btn-remove-cond { 
+            background: var(--error-container); border: 2px solid #000; color: var(--error); width: 42px; height: 42px; font-weight: 900; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 4px 4px 0px #000; transition: all 0.1s; margin-left: 8px; 
+        }
+        .btn-remove-cond:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px #000; }
+        .btn-remove-cond:active { transform: translate(4px, 4px); box-shadow: 0px 0px 0px #000; }
+    </style>
 </head>
-<body>
-    <div class="app-container">
-        <!-- Header -->
-        <header class="app-header">
-            <div class="logo-area">
-                <span class="logo-icon">🍃</span>
-                <h1>MongoDB Sync</h1>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col border-x-border-width border-black overflow-x-hidden">
+
+    <!-- LOGIN VIEW -->
+    <div id="login-view" class="flex flex-col flex-grow p-margin space-y-8 hidden">
+        <header class="border-b-border-width border-black pb-4 mb-4 mt-4 flex justify-between items-center">
+            <h1 class="font-headline-lg text-[28px] font-black text-on-background uppercase tracking-tight">Setup Database</h1>
+            <button class="theme-toggle px-3 py-2 bg-white dark:bg-[#FFD300] border-2 border-black neo-shadow-sm font-bold text-black uppercase text-[12px] flex items-center gap-2 transition-transform hover:-translate-y-1">
+                <span class="dark:hidden">Light Mode</span>
+                <span class="hidden dark:block">Dark Mode</span>
+            </button>
+        </header>
+        <div class="space-y-6">
+            <div>
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Connection String (URI)</label>
+                <input type="password" id="mongo-uri-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="mongodb+srv://..." />
             </div>
-            <div id="connection-status" class="status-badge checking">
-                <span class="pulse-dot"></span>
-                <span class="status-text">Checking API...</span>
+            <div>
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Database Name</label>
+                <input type="text" id="mongo-db-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="my_database" />
+            </div>
+            <button id="btn-login" class="w-full bg-primary-container border-border-width border-black p-5 font-headline-lg text-[20px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all mt-8">
+                <span class="btn-text">Connect & Load</span>
+                <div class="btn-loader hidden" id="login-loader">
+                    <span class="btn-spinner"></span>
+                </div>
+            </button>
+            <div id="login-error" class="hidden text-error font-bold text-[14px] mt-4 p-4 border-2 border-black bg-error-container/20"></div>
+        </div>
+    </div>
+
+    <!-- APP VIEW -->
+    <div id="app-view" class="flex flex-col flex-grow hidden">
+        <!-- TopAppBar Component -->
+        <header class="bg-background border-b-border-width border-black flex justify-between items-center px-margin py-4 w-full sticky top-0 z-50">
+            <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">database</span>
+                <h1 class="font-headline-lg text-[22px] font-black text-on-background uppercase tracking-tight">MongoDB Sync</h1>
+            </div>
+            <div class="flex items-center gap-3">
+                <button class="theme-toggle px-3 py-2 bg-white dark:bg-[#FFD300] border-2 border-black neo-shadow-sm font-bold text-black uppercase text-[12px] flex items-center gap-2 transition-transform hover:-translate-y-1">
+                    <span class="dark:hidden">Light</span>
+                    <span class="hidden dark:block">Dark</span>
+                </button>
+                <div id="connection-status" class="status-badge checking">
+                    <span class="pulse-dot"></span>
+                    <span class="status-text">Checking</span>
+                </div>
             </div>
         </header>
 
-        <!-- Main Body -->
-        <main class="app-body">
-            <!-- Form Group: Collection Selection -->
-            <div class="form-group">
-                <label for="collection-select">Select Collection</label>
-                <div class="select-wrapper">
-                    <select id="collection-select" disabled>
-                        <option value="">Loading collections...</option>
-                    </select>
-                    <button id="btn-import-schema" class="btn-schema" disabled title="Import Schema from MongoDB">
-                        &#x2B07; Schema
+        <!-- Main Content Canvas -->
+        <main class="flex-grow p-margin space-y-5">
+            
+            <!-- Selection Section -->
+            <section class="space-y-4">
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block">Select Collection</label>
+                <div class="flex gap-gutter">
+                    <div class="relative flex-grow">
+                        <select id="collection-select" disabled class="w-full h-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background appearance-none cursor-pointer neo-shadow-sm">
+                            <option value="">Loading...</option>
+                        </select>
+                        <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                            <span class="material-symbols-outlined">expand_more</span>
+                        </div>
+                    </div>
+                    <button id="btn-import-schema" disabled class="bg-primary-container border-border-width border-black p-4 neo-shadow neo-shadow-hover flex items-center justify-center transition-all text-black disabled:opacity-50">
+                        <span class="material-symbols-outlined font-bold">download</span>
                     </button>
-                    <button id="btn-refresh-collections" class="btn-icon" title="Refresh Collections">
-                        &#x1F504;
+                    <button id="btn-refresh-collections" class="bg-surface-variant border-border-width border-black p-4 neo-shadow neo-shadow-hover flex items-center justify-center transition-all disabled:opacity-50">
+                        <span class="material-symbols-outlined">refresh</span>
+                    </button>
+                    <button id="btn-new-collection" class="bg-primary-container border-border-width border-black p-4 neo-shadow neo-shadow-hover flex items-center justify-center transition-all text-black disabled:opacity-50" title="Create New Collection">
+                        <span class="material-symbols-outlined font-bold">add</span>
                     </button>
                 </div>
-            </div>
+                <!-- Inline New Collection Input -->
+                <div id="new-collection-container" class="hidden flex flex-col gap-2 pt-2">
+                    <input type="text" id="new-collection-input" class="w-full bg-surface-container-lowest border-border-width border-black p-3 font-data-field text-on-background neo-shadow-sm focus:outline-none" placeholder="Collection name" />
+                    <input type="text" id="new-collection-schema" class="w-full bg-surface-container-lowest border-border-width border-black p-3 font-data-field text-on-background neo-shadow-sm focus:outline-none" placeholder="Schema fields (e.g. name, age, email)" />
+                    <div class="flex gap-2">
+                        <button id="btn-create-collection" class="flex-grow bg-primary-container border-border-width border-black px-4 py-2 neo-shadow neo-shadow-hover font-bold text-black uppercase text-[12px] transition-transform hover:-translate-y-1">Create</button>
+                        <button id="btn-cancel-collection" class="flex-grow bg-surface-variant border-border-width border-black px-4 py-2 neo-shadow neo-shadow-hover font-bold text-on-surface-variant uppercase text-[12px] transition-transform hover:-translate-y-1">Cancel</button>
+                    </div>
+                </div>
+            </section>
 
-            <!-- Schema Indicator Bar -->
-            <div id="schema-bar" class="schema-bar hidden">
-                <span class="schema-bar-label">Schema</span>
-                <div id="schema-bar-fields" class="schema-bar-fields"></div>
-            </div>
+            <!-- Schema Display Section -->
+            <section id="schema-bar" class="hidden bg-secondary-container border-border-width border-black p-container-padding space-y-4 neo-shadow-sm">
+                <div class="flex justify-between items-center">
+                    <span class="font-label-mono text-label-mono uppercase font-black text-on-secondary-container">Collection Schema</span>
+                    <span id="schema-total-records" class="font-label-mono text-[10px] text-on-secondary-container opacity-70"></span>
+                </div>
+                <div id="schema-bar-fields" class="flex flex-wrap gap-2">
+                    <!-- injected dynamically -->
+                </div>
+            </section>
 
-            <!-- Form Group: Filter Query (tabbed) -->
-            <div class="form-group" id="query-group">
-                <div class="label-row">
-                    <label>Query Filter</label>
-                    <div class="query-mode-tabs">
-                        <button id="tab-builder" class="tab-btn active">&#x26A1; Builder</button>
-                        <button id="tab-json"    class="tab-btn">{ } JSON</button>
+            <!-- Query Filter Section -->
+            <section class="space-y-3" id="query-group">
+                <div class="flex justify-between items-end">
+                    <label class="font-label-mono text-label-mono uppercase text-on-surface-variant">Query Filter</label>
+                    <div class="flex border-border-width border-black overflow-hidden neo-shadow-sm">
+                        <button id="tab-builder" class="px-4 py-2 bg-primary-container text-black font-label-mono text-[11px] font-black uppercase transition-colors">Builder</button>
+                        <button id="tab-json" class="px-4 py-2 bg-surface-variant text-on-surface-variant font-label-mono text-[11px] font-black uppercase border-l-border-width border-black transition-colors">JSON</button>
                     </div>
                 </div>
 
                 <!-- GUI Builder Panel -->
-                <div id="builder-panel">
-                    <div class="builder-header">
-                        <span class="logic-label">Match</span>
-                        <div class="logic-toggle">
-                            <button id="btn-logic-and" class="logic-btn active">ALL (AND)</button>
-                            <button id="btn-logic-or"  class="logic-btn">ANY (OR)</button>
+                <div id="builder-panel" class="space-y-3">
+                    <div class="flex justify-between items-center border-border-width border-black p-3 bg-surface-container-low neo-shadow-sm">
+                        <span class="font-label-mono text-[11px] uppercase">Match</span>
+                        <div class="flex border-2 border-black overflow-hidden">
+                            <button id="btn-logic-and" class="px-3 py-1 text-[10px] font-bold bg-white text-black border-r-2 border-black">ALL (AND)</button>
+                            <button id="btn-logic-or" class="px-3 py-1 text-[10px] font-bold bg-surface-variant text-on-surface-variant">ANY (OR)</button>
                         </div>
-                        <span id="condition-count" class="condition-count">fetch all</span>
+                        <span id="condition-count" class="font-label-mono text-[10px] opacity-70">fetch all</span>
                     </div>
-                    <div id="conditions-list"></div>
-                    <button id="btn-add-condition" class="btn-add-cond">&#xFF0B; Add Condition</button>
-                    <details class="query-preview">
-                        <summary>Preview JSON</summary>
-                        <pre id="query-preview-code">{}</pre>
+                    
+                    <div id="conditions-list" class="space-y-3"></div>
+                    
+                    <button id="btn-add-condition" class="w-full bg-surface-container-low border-border-width border-black p-4 neo-shadow-sm flex items-center justify-center gap-3 group cursor-pointer hover:bg-surface-container hover:-translate-y-1 hover:shadow-[6px_6px_0px_#000] transition-all outline-none">
+                        <span class="material-symbols-outlined text-primary-container group-hover:scale-110 transition-transform">add_circle</span>
+                        <span class="font-label-mono text-label-mono uppercase">Add Match Condition</span>
+                    </button>
+                    
+                    <details class="border-border-width border-black p-3 bg-background neo-shadow-sm group mt-2">
+                        <summary class="flex items-center gap-2 opacity-70 cursor-pointer font-label-mono text-[10px] uppercase outline-none list-none">
+                            <span class="material-symbols-outlined text-[18px] group-open:hidden">terminal</span>
+                            <span class="material-symbols-outlined text-[18px] hidden group-open:block">code_off</span>
+                            Preview JSON
+                        </summary>
+                        <code id="query-preview-code" class="text-black dark:text-white bg-[#E8E8E8] dark:bg-[#1b1b1b] border-2 border-black p-4 block mt-4 whitespace-pre-wrap break-all text-[14px] font-black">{}</code>
                     </details>
                 </div>
 
                 <!-- Raw JSON Panel -->
-                <div id="json-panel" class="hidden">
-                    <div class="label-row" style="margin-bottom:4px">
-                        <span style="font-size:11px;color:var(--color-text-muted)">Raw MongoDB filter</span>
-                        <span id="json-validity" class="validity-indicator empty">Empty (Fetch All)</span>
+                <div id="json-panel" class="hidden space-y-2">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="font-label-mono text-[10px] uppercase opacity-70">Raw MongoDB filter</span>
+                        <span id="json-validity" class="font-label-mono text-[10px] uppercase text-on-surface-variant bg-surface-variant px-2 py-1 border-2 border-black">Empty (Fetch All)</span>
                     </div>
-                    <textarea
-                        id="query-input"
-                        placeholder='e.g., { "status": "active", "age": { "$gt": 25 } }'
-                        spellcheck="false"
-                    ></textarea>
+                    <textarea id="query-input" class="w-full bg-[#E8E8E8] dark:bg-[#1b1b1b] text-black dark:text-white border-border-width border-black p-4 font-data-field text-data-field neo-shadow-sm focus:outline-none" placeholder='{ "status": "active" }'></textarea>
                 </div>
+            </section>
+
+            <!-- Record Limit -->
+            <section class="space-y-2 pt-2">
+                <div class="flex justify-between items-center">
+                    <label class="font-label-mono text-label-mono uppercase text-on-surface-variant">Record Limit</label>
+                    <span class="font-label-mono text-[11px] text-on-surface-variant italic lowercase">0 for unlimited</span>
+                </div>
+                <input id="limit-input" type="number" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all outline-none" value="0" min="0" />
+            </section>
+
+            <!-- Progress Bar -->
+            <div id="progress-text" class="hidden text-center font-label-mono text-[11px] uppercase mt-4 text-tertiary-fixed-dim">Initializing...</div>
+            <div id="progress-bar-container" class="hidden w-full h-4 bg-surface border-border-width border-black mt-2 overflow-hidden neo-shadow-sm">
+                <div id="progress-bar-fill" class="h-full bg-tertiary-fixed-dim transition-all" style="width: 0%;"></div>
             </div>
 
-            <!-- Action Button -->
-            <button id="btn-run" class="btn-primary" disabled>
-                <span class="btn-text">Sync &amp; Fetch Data</span>
-                <span class="btn-spinner hidden"></span>
-            </button>
-
-            <!-- Feedback / Messages -->
-            <div id="feedback-panel" class="feedback-panel hidden">
-                <div class="feedback-title">Sync Results</div>
-                <div class="feedback-stats">
-                    <div class="stat-card">
-                        <span class="stat-num" id="stat-fetched">0</span>
-                        <span class="stat-label">Fetched</span>
+            <!-- Feedback Panel -->
+            <div id="feedback-panel" class="hidden bg-surface-variant border-border-width border-black p-4 neo-shadow-sm mt-4">
+                <div class="font-label-mono text-[11px] uppercase mb-4 opacity-70">Sync Results</div>
+                <div class="flex gap-3 mb-4">
+                    <div class="flex-1 bg-surface-container-lowest border-border-width border-black p-3 text-center neo-shadow-sm">
+                        <div id="stat-fetched" class="font-headline-lg text-[24px] font-black text-primary-container">0</div>
+                        <div class="font-label-mono text-[9px] uppercase opacity-70 mt-1">Fetched</div>
                     </div>
-                    <div class="stat-card">
-                        <span class="stat-num" id="stat-inserted">0</span>
-                        <span class="stat-label">Inserted</span>
+                    <div class="flex-1 bg-surface-container-lowest border-border-width border-black p-3 text-center neo-shadow-sm">
+                        <div id="stat-inserted" class="font-headline-lg text-[24px] font-black text-tertiary-fixed-dim">0</div>
+                        <div class="font-label-mono text-[9px] uppercase opacity-70 mt-1">Inserted</div>
                     </div>
-                    <div class="stat-card">
-                        <span class="stat-num" id="stat-updated">0</span>
-                        <span class="stat-label">Updated</span>
+                    <div class="flex-1 bg-surface-container-lowest border-border-width border-black p-3 text-center neo-shadow-sm">
+                        <div id="stat-updated" class="font-headline-lg text-[24px] font-black text-on-surface">0</div>
+                        <div class="font-label-mono text-[9px] uppercase opacity-70 mt-1">Updated</div>
                     </div>
                 </div>
-                <div id="feedback-message" class="feedback-message"></div>
+                <div id="feedback-message" class="font-data-field text-[13px] bg-background border-border-width border-black p-4 mt-2 text-primary-container"></div>
             </div>
 
-            <!-- Guidelines / Help Panel -->
-            <details class="help-details">
-                <summary>How to use this Add-in</summary>
-                <div class="help-content">
-                    <p><strong>1. Fetching:</strong> Select a collection, build a filter (or leave empty for all), click <strong>Sync &amp; Fetch</strong>.</p>
-                    <p><strong>2. Inserting:</strong> Import schema first via <strong>&#x2B07; Schema</strong>, then add rows below the headers.</p>
-                    <p><strong>3. Updating:</strong> Modify cells in rows that have an <code>_id</code>. Sync pushes edits to MongoDB.</p>
-                    <p><strong>4. Builder vs JSON:</strong> Builder generates the filter visually. Switch to JSON to hand-write complex queries.</p>
+            <!-- Action Buttons -->
+            <div id="action-buttons-container" class="pt-4 space-y-gutter">
+                <button id="btn-run" disabled class="w-full bg-primary-container border-border-width border-black p-4 font-headline-lg text-[18px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span class="btn-text">Sync &amp; Fetch Data</span>
+                    <span class="material-symbols-outlined font-black btn-icon-normal">sync</span>
+                    <span class="btn-spinner hidden"></span>
+                </button>
+                <button id="btn-delete" disabled class="w-full bg-[#FF4444] border-border-width border-black p-4 font-headline-lg text-[18px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span class="btn-text">Delete Selected</span>
+                    <span class="material-symbols-outlined font-black btn-icon-normal">delete_forever</span>
+                    <span class="btn-spinner hidden border-t-black"></span>
+                </button>
+            </div>
+            
+            <!-- Stop Button -->
+            <div id="btn-stop-container" class="pt-4 hidden">
+                <button id="btn-stop" class="w-full bg-[#F59E0B] border-border-width border-black p-4 font-headline-lg text-[18px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all">
+                    <span class="btn-text">Stop Sync</span>
+                    <span class="material-symbols-outlined font-black btn-icon-normal">stop_circle</span>
+                    <span class="btn-spinner hidden border-t-black"></span>
+                </button>
+            </div>
+
+            <!-- Help Accordion -->
+            <details class="group border-border-width border-black bg-surface-variant neo-shadow-sm mt-4">
+                <summary class="p-4 flex items-center justify-between cursor-pointer hover:bg-surface-container transition-all list-none outline-none">
+                    <span class="font-label-mono text-label-mono uppercase">How to use this Add-in</span>
+                    <span class="material-symbols-outlined group-open:rotate-180 transition-transform">expand_more</span>
+                </summary>
+                <div class="p-5 border-t-border-width border-black font-data-field text-[13px] opacity-80 space-y-4 bg-background">
+                    <p><strong>1. Fetching:</strong> Select collection, build filter, click Sync & Fetch.</p>
+                    <p><strong>2. Inserting:</strong> Import schema via ⬇, add rows below headers.</p>
+                    <p><strong>3. Updating:</strong> Modify cells in rows with _id. Sync pushes edits.</p>
                 </div>
             </details>
         </main>
 
-        <!-- Footer -->
-        <footer class="app-footer">
-            Excel-MongoDB Connector v1.0.0
+        <!-- Footer Component -->
+        <footer class="bg-background border-t-border-width border-black flex justify-center items-center py-5 w-full mt-auto">
+            <p class="font-label-mono text-[10px] uppercase text-on-surface-variant opacity-60">Excel-MongoDB Connector v1.0.0</p>
         </footer>
     </div>
-    <!-- Main taskpane logic -->
-    <script src="taskpane.js"></script>
+    
+    <script src="taskpane.js?v=5"></script>
+    <script>
+        // Micro-interactions
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                if(btn.classList.contains('neo-shadow') && !btn.disabled) {
+                    btn.classList.remove('neo-shadow');
+                    btn.classList.add('neo-shadow-active');
+                }
+            });
+            btn.addEventListener('mouseup', () => {
+                if(btn.classList.contains('neo-shadow-active')) {
+                    btn.classList.remove('neo-shadow-active');
+                    btn.classList.add('neo-shadow');
+                }
+            });
+            btn.addEventListener('mouseleave', () => {
+                if(btn.classList.contains('neo-shadow-active')) {
+                    btn.classList.remove('neo-shadow-active');
+                    btn.classList.add('neo-shadow');
+                }
+            });
+        });
+        // Theme toggling
+        document.querySelectorAll('.theme-toggle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.documentElement.classList.toggle('dark');
+            });
+        });
+    </script>
 </body>
 </html>
