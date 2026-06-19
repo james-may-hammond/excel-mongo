@@ -1,5 +1,5 @@
 // Local dev uses fe/config.js. Production builds generate this value from ADDIN_API_BASE.
-const API_BASE = (window.EXCEL_MONGO_CONFIG && window.EXCEL_MONGO_CONFIG.apiBase) || window.location.origin;
+let API_BASE = (window.EXCEL_MONGO_CONFIG && window.EXCEL_MONGO_CONFIG.apiBase) || window.location.origin;
 
 let currentMongoUri = "";
 let currentMongoDb = "";
@@ -83,6 +83,12 @@ Office.onReady(async (info) => {
         // Restore credentials
         currentMongoUri = Office.context.document.settings.get("MongoUri") || "";
         currentMongoDb = Office.context.document.settings.get("MongoDb") || "";
+        
+        const savedApiBase = Office.context.document.settings.get("ApiBase");
+        if (savedApiBase) {
+            API_BASE = savedApiBase;
+        }
+        document.getElementById("api-base-input").value = API_BASE;
         
         if (currentMongoUri && currentMongoDb) {
             document.getElementById('login-view').classList.add('hidden');
@@ -1250,6 +1256,7 @@ function showSuccess(msg, fetched = 0, inserted = 0, updated = 0) {
 document.getElementById('btn-login').addEventListener('click', async () => {
     const uri = document.getElementById('mongo-uri-input').value.trim();
     const dbName = document.getElementById('mongo-db-input').value.trim();
+    const userApiBase = document.getElementById('api-base-input').value.trim();
     const errEl = document.getElementById('login-error');
     const loader = document.getElementById('login-loader');
     
@@ -1257,6 +1264,10 @@ document.getElementById('btn-login').addEventListener('click', async () => {
         errEl.textContent = "Please fill in both fields.";
         errEl.classList.remove('hidden');
         return;
+    }
+    
+    if (userApiBase) {
+        API_BASE = userApiBase.replace(/\/+$/, "");
     }
     
     errEl.classList.add('hidden');
@@ -1277,6 +1288,9 @@ document.getElementById('btn-login').addEventListener('click', async () => {
         
         Office.context.document.settings.set("MongoUri", uri);
         Office.context.document.settings.set("MongoDb", dbName);
+        if (userApiBase) {
+            Office.context.document.settings.set("ApiBase", API_BASE);
+        }
         Office.context.document.settings.saveAsync();
         
         document.getElementById('login-view').classList.add('hidden');

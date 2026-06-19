@@ -22,6 +22,11 @@ function requiredUrl(name) {
         throw new Error(`${name} is required. Example: ${name}=https://excel-mongo.example.com npm run package`);
     }
 
+    // Auto-prepend https:// if the user just pasted the domain (like "excel-mongo.up.railway.app")
+    if (!value.startsWith("http://") && !value.startsWith("https://")) {
+        value = "https://" + value;
+    }
+
     let parsed;
     try {
         parsed = new URL(value);

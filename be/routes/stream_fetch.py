@@ -5,6 +5,15 @@ from be.db import get_db
 from motor.core import AgnosticDatabase
 import json
 import asyncio
+from bson import ObjectId
+from datetime import datetime
+
+def mongo_serializer(obj):
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 router = APIRouter()
 
@@ -27,7 +36,7 @@ async def stream_fetch(request: FetchRequest, db: AgnosticDatabase = Depends(get
             async for doc in cursor.batch_size(1000):
                 doc["_id"] = str(doc["_id"])
                 doc.pop("__v", None)
-                yield json.dumps(doc) + "\n"
+                yield json.dumps(doc, default=mongo_serializer) + "\n"
                 
                 count += 1
                 if count % 2000 == 0:
