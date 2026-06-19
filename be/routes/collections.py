@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
-from be.db import mongo_client,db
+from fastapi import APIRouter, HTTPException, Depends
+from be.db import get_db
+from motor.core import AgnosticDatabase
 router = APIRouter()
 
 @router.get("/collections")
-async def collections():
+async def collections(db: AgnosticDatabase = Depends(get_db)):
     try:
         collections = await db.list_collection_names()
         return {

@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
-from be.db import mongo_client, db
+from be.db import get_db
+from motor.core import AgnosticDatabase
 
 router = APIRouter()
 class InsertionRequest(BaseModel):
@@ -9,12 +10,14 @@ class InsertionRequest(BaseModel):
 
 
 @router.post("/insert", status_code=status.HTTP_201_CREATED)
-async def insert(request: InsertionRequest):
+async def insert(request: InsertionRequest, db: AgnosticDatabase = Depends(get_db)):
     try:
         collection = db[request.collection]
+        doc = request.data.copy()
+        doc["__v"] = 1
         
         await collection.insert_one (
-            request.data
+            doc
         )
         return {
             "status":"sucess"
