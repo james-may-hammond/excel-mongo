@@ -1325,7 +1325,6 @@ function showSuccess(msg, fetched = 0, inserted = 0, updated = 0) {
 document.getElementById('btn-login').addEventListener('click', async () => {
     const uri = document.getElementById('mongo-uri-input').value.trim();
     const dbName = document.getElementById('mongo-db-input').value.trim();
-    const userApiBase = document.getElementById('api-base-input').value.trim();
     const errEl = document.getElementById('login-error');
     const loader = document.getElementById('login-loader');
     
