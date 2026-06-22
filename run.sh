@@ -27,6 +27,16 @@ if [ ! -f ".env" ]; then
 fi
 echo "      .env found ✅"
 
+# Dependencies
+echo "checking & installing python dependencies"
+if [ ! -d ".venv" ]; then
+    echo "      Creating virtual environment..."
+    python3 -m venv .venv
+fi
+source .venv/bin/activate
+pip install -q -r requirements.txt
+echo "      Dependencies installed "
+
 # ── 2. SSL certificate ─────────────────────────────────
 echo "[2/3] Checking SSL certificate..."
 if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
@@ -60,7 +70,7 @@ echo "      Certificate trusted ✅"
 echo "[3/3] Starting server on https://localhost:$PORT ..."
 echo ""
 echo "  To load the add-in into Excel, run in a second terminal:"
-echo "  ./node_modules/.bin/office-addin-debugging start fe/manifest.xml --no-debug --dev-server-port $PORT"
+echo "  npm run start:addin"
 echo ""
 
 # Kill anything already on the port

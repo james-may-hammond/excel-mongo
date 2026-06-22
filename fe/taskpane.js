@@ -4,6 +4,90 @@ let API_BASE = (window.EXCEL_MONGO_CONFIG && window.EXCEL_MONGO_CONFIG.apiBase) 
 let currentMongoUri = "";
 let currentMongoDb = "";
 
+// WebSocket Manager
+let wsSocket = null;
+const wsPendingRequests = new Map();
+const wsStreamHandlers = new Map();
+
+function connectWebSocket() {
+    return new Promise((resolve, reject) => {
+        if (wsSocket && wsSocket.readyState === WebSocket.OPEN) {
+            return resolve();
+        }
+        
+        let wsProtocol = window.location.protocol === 'https:' || API_BASE.startsWith('https') ? 'wss://' : 'ws://';
+        let wsHost = API_BASE.replace('http://', '').replace('https://', '');
+        let wsUrl = `${wsProtocol}${wsHost}/ws?uri=${encodeURIComponent(currentMongoUri)}&db_name=${encodeURIComponent(currentMongoDb)}`;
+        
+        wsSocket = new WebSocket(wsUrl);
+        
+        wsSocket.onopen = () => {
+            console.log("WebSocket connected");
+            resolve();
+        };
+        
+        wsSocket.onerror = (err) => {
+            console.error("WebSocket error", err);
+            reject(err);
+        };
+        
+        wsSocket.onclose = () => {
+            console.log("WebSocket closed");
+            wsSocket = null;
+        };
+        
+        wsSocket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            const reqId = data.requestId;
+            
+            if (data.status === "chunk" && wsStreamHandlers.has(reqId)) {
+                wsStreamHandlers.get(reqId)(data.data);
+            } else if (wsPendingRequests.has(reqId)) {
+                const { res, rej } = wsPendingRequests.get(reqId);
+                wsPendingRequests.delete(reqId);
+                wsStreamHandlers.delete(reqId);
+                
+                if (data.status === "error") {
+                    rej(new Error(data.error || "Unknown error"));
+                } else {
+                    res(data.data);
+                }
+            }
+        };
+    });
+}
+
+function sendWsRequest(action, payload, onChunk = null) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            await connectWebSocket();
+        } catch (e) {
+            return reject(e);
+        }
+        
+        const reqId = crypto.randomUUID();
+        wsPendingRequests.set(reqId, { res: resolve, rej: reject });
+        if (onChunk) {
+            wsStreamHandlers.set(reqId, onChunk);
+        }
+        
+        wsSocket.send(JSON.stringify({
+            requestId: reqId,
+            action: action,
+            payload: payload
+        }));
+    });
+}
+
+class WsResponse {
+    constructor(data, ok = true, status = 200) {
+        this._data = data;
+        this.ok = ok;
+        this.status = status;
+    }
+    async json() { return this._data; }
+}
+
 function getAuthHeaders(existingHeaders = {}) {
     return {
         "X-Mongo-URI": currentMongoUri,
@@ -14,16 +98,30 @@ function getAuthHeaders(existingHeaders = {}) {
 
 // Fetch with a timeout so we fail fast instead of hanging
 async function fetchWithTimeout(url, options = {}, timeoutMs = 60000) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    if (url.endsWith('/health') || url.endsWith('/create_collection')) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const res = await fetch(url, { ...options, signal: controller.signal });
+            return res;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
     
-    options.headers = getAuthHeaders(options.headers || {});
+    const urlObj = new URL(url);
+    const action = urlObj.pathname.split('/').pop();
+    let payload = options.body ? JSON.parse(options.body) : {};
+    
+    for (const [k, v] of urlObj.searchParams.entries()) {
+        payload[k] = v;
+    }
     
     try {
-        const res = await fetch(url, { ...options, signal: controller.signal });
-        return res;
-    } finally {
-        clearTimeout(timer);
+        const data = await sendWsRequest(action, payload);
+        return new WsResponse(data);
+    } catch(err) {
+        return new WsResponse({detail: err.message}, false, 500);
     }
 }
 
@@ -130,9 +228,9 @@ async function initApp() {
     // Query builder controls
     document.getElementById('tab-builder').addEventListener('click', () => switchQueryMode('builder'));
     document.getElementById('tab-json').addEventListener('click',    () => switchQueryMode('json'));
-    document.getElementById('btn-add-condition').addEventListener('click', handleAddCondition);
-    document.getElementById('btn-logic-and').addEventListener('click', () => setGuiLogic('and'));
-    document.getElementById('btn-logic-or').addEventListener('click',  () => setGuiLogic('or'));
+    
+    bindBlocksContainerEvents();
+    renderBlocks();
 
     // JSON textarea
     queryInput.addEventListener('input', () => {
@@ -254,10 +352,15 @@ async function checkApiHealth() {
         const data = await res.json();
         
         if (data.status === "ok") {
-            isApiOnline = true;
-            updateStatus("online", "Connected to Mongo");
-            btnRun.disabled = false;
-            if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = false;
+            try {
+                await connectWebSocket();
+                isApiOnline = true;
+                updateStatus("online", "Connected to Mongo");
+                btnRun.disabled = false;
+                if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = false;
+            } catch (wsErr) {
+                throw new Error("WebSocket connection failed");
+            }
         } else {
             throw new Error("Health check returned status " + data.status);
         }
@@ -347,17 +450,36 @@ function validateQuerySyntax() {
 
 // Core Workflow: Sync Excel adjustments then Fetch matching data
 async function runSyncAndFetch() {
-    const collection = collectionSelect.value;
-    if (!collection) {
-        showError("Please select a database collection first.");
-        return;
+    let queriesToFetch = [];
+    let isMultiMode = false;
+    
+    if (document.getElementById('tab-builder').classList.contains('active')) {
+        const built = buildGuiQuery();
+        if (Array.isArray(built)) {
+            isMultiMode = true;
+            queriesToFetch = built;
+        } else {
+            if (!validateQuerySyntax()) {
+                showError("Query filter is not valid JSON.");
+                return;
+            }
+            queriesToFetch = [{ collection: collectionSelect.value, filters: built, limit: parseInt(limitInput.value) || 0 }];
+        }
+    } else {
+        if (!validateQuerySyntax()) {
+            showError("Query filter is not valid JSON.");
+            return;
+        }
+        queriesToFetch = [{ collection: collectionSelect.value, filters: JSON.parse(queryInput.value.trim()), limit: parseInt(limitInput.value) || 0 }];
     }
 
-    await ensureTargetSheet(collection);
-
-    if (!validateQuerySyntax()) {
-        showError("Query filter is not valid JSON.");
-        return;
+    // Ensure all target sheets exist
+    for (const query of queriesToFetch) {
+        if (!query.collection) {
+            showError("One of your queries is missing a collection.");
+            return;
+        }
+        await ensureTargetSheet(query.collection);
     }
 
     setLoading(true);
@@ -387,13 +509,16 @@ async function runSyncAndFetch() {
     let inserted = 0;
     let updated = 0;
     let totalFetched = 0;
-    try {
-        const countRes = await fetchWithTimeout(`${API_BASE}/schema?collection=${encodeURIComponent(collection)}`);
-        if (countRes.ok) {
-            const countData = await countRes.json();
-            expectedTotal = countData.total_count || 1000000;
-        }
-    } catch (e) {}
+
+    if (!isMultiMode && queriesToFetch.length > 0) {
+        try {
+            const countRes = await fetchWithTimeout(`${API_BASE}/schema?collection=${encodeURIComponent(queriesToFetch[0].collection)}`);
+            if (countRes.ok) {
+                const countData = await countRes.json();
+                expectedTotal = countData.total_count || 1000000;
+            }
+        } catch (e) {}
+    }
 
     updateProgress("Reading Excel data...", 0);
 
@@ -405,159 +530,140 @@ async function runSyncAndFetch() {
             await context.sync();
         }).catch(() => {});
 
-        const rawSheetData = await getSheetData();
-        const syncPayload = parseSheetData(rawSheetData);
+        // Local syncing is bypassed in multi-mode for safety
+        if (!isMultiMode && queriesToFetch.length > 0) {
+            const rawSheetData = await getSheetData();
+            const syncPayload = parseSheetData(rawSheetData);
+            const primaryCol = queriesToFetch[0].collection;
 
-        if (syncPayload.inserts.length > 0 && currentSchema.length === 0) {
-            showError("Cannot insert: no schema found in the sheet. Click '⬇ Schema' to import first.");
-            setLoading(false);
-            hideProgress();
-            return;
-        }
-        
-        let conflicts = [];
-
-        if (syncPayload.inserts.length > 0 || syncPayload.updates.length > 0) {
-            const chunkSize = 1000;
-            const totalTasks = syncPayload.inserts.length + syncPayload.updates.length;
-            let completedTasks = 0;
-            
-            for (let i = 0; i < syncPayload.inserts.length; i += chunkSize) {
-                if (isSyncCancelled) break;
-                const chunk = syncPayload.inserts.slice(i, i + chunkSize);
-                updateProgress(
-                    `Bulk inserting ${completedTasks + chunk.length} / ${totalTasks}...`,
-                    ((completedTasks + chunk.length) / totalTasks) * 100
-                );
-                const res = await fetchWithTimeout(`${API_BASE}/bulk_insert`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ collection, data: chunk })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || "Bulk insert failed");
-                inserted += data.inserted || 0;
-                completedTasks += chunk.length;
-            }
-
-            for (let i = 0; i < syncPayload.updates.length; i += chunkSize) {
-                if (isSyncCancelled) break;
-                const chunk = syncPayload.updates.slice(i, i + chunkSize);
-                updateProgress(
-                    `Bulk updating ${completedTasks + chunk.length} / ${totalTasks}...`,
-                    ((completedTasks + chunk.length) / totalTasks) * 100
-                );
-                const res = await fetchWithTimeout(`${API_BASE}/bulk_update`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ collection, data: chunk })
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || "Bulk update failed");
-                updated += data.updated || 0;
-                if (data.conflicts) conflicts.push(...data.conflicts);
-                completedTasks += chunk.length;
-            }
-
-            if (conflicts.length > 0) {
-                await Excel.run(async (context) => {
-                    const sheet = context.workbook.worksheets.getActiveWorksheet();
-                    conflicts.forEach(c => {
-                        if (c._rowIndex !== undefined) {
-                            const range = sheet.getRangeByIndexes(c._rowIndex, 0, 1, currentSchema.length || 10);
-                            range.format.fill.color = "#FFCCCC";
-                        }
-                    });
-                    await context.sync();
-                });
-                showError(`${conflicts.length} conflict(s) detected. Conflicting rows are red. Sync again to overwrite with server data.`);
+            if (syncPayload.inserts.length > 0 && currentSchema.length === 0) {
+                showError("Cannot insert: no schema found in the sheet. Click '⬇ Schema' to import first.");
                 setLoading(false);
                 hideProgress();
                 return;
             }
+            
+            let conflicts = [];
+
+            if (syncPayload.inserts.length > 0 || syncPayload.updates.length > 0) {
+                const chunkSize = 1000;
+                const totalTasks = syncPayload.inserts.length + syncPayload.updates.length;
+                let completedTasks = 0;
+                
+                for (let i = 0; i < syncPayload.inserts.length; i += chunkSize) {
+                    if (isSyncCancelled) break;
+                    const chunk = syncPayload.inserts.slice(i, i + chunkSize);
+                    updateProgress(`Bulk inserting ${completedTasks + chunk.length} / ${totalTasks}...`, ((completedTasks + chunk.length) / totalTasks) * 100);
+                    const res = await fetchWithTimeout(`${API_BASE}/bulk_insert`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ collection: primaryCol, data: chunk })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || "Bulk insert failed");
+                    inserted += data.inserted || 0;
+                    completedTasks += chunk.length;
+                }
+
+                for (let i = 0; i < syncPayload.updates.length; i += chunkSize) {
+                    if (isSyncCancelled) break;
+                    const chunk = syncPayload.updates.slice(i, i + chunkSize);
+                    updateProgress(`Bulk updating ${completedTasks + chunk.length} / ${totalTasks}...`, ((completedTasks + chunk.length) / totalTasks) * 100);
+                    const res = await fetchWithTimeout(`${API_BASE}/bulk_update`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ collection: primaryCol, data: chunk })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || "Bulk update failed");
+                    updated += data.updated || 0;
+                    if (data.conflicts) conflicts.push(...data.conflicts);
+                    completedTasks += chunk.length;
+                }
+
+                if (conflicts.length > 0) {
+                    await Excel.run(async (context) => {
+                        const sheet = context.workbook.worksheets.getActiveWorksheet();
+                        conflicts.forEach(c => {
+                            if (c._rowIndex !== undefined) {
+                                const range = sheet.getRangeByIndexes(c._rowIndex, 0, 1, currentSchema.length || 10);
+                                range.format.fill.color = "#FFCCCC";
+                            }
+                        });
+                        await context.sync();
+                    });
+                    showError(`${conflicts.length} conflict(s) detected. Conflicting rows are red. Sync again to overwrite with server data.`);
+                    setLoading(false);
+                    hideProgress();
+                    return;
+                }
+            }
         }
 
         updateProgress("Connecting to fetch stream...", 0);
-        let filters = {};
-        if (queryInput.value.trim()) filters = JSON.parse(queryInput.value.trim());
+        let fetchAction = isMultiMode ? `multi_stream_fetch` : `stream_fetch`;
+        let fetchBody = isMultiMode ? { queries: queriesToFetch } : queriesToFetch[0];
 
-        const fetchRes = await fetch(`${API_BASE}/stream_fetch`, {
-            method: "POST",
-            headers: getAuthHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ collection, filters, limit: parseInt(limitInput.value) || 0 }),
-            signal: activeAbortController.signal
-        });
-        
-        if (!fetchRes.ok) throw new Error("Stream fetch failed");
-
-        const reader = fetchRes.body.getReader();
-        const decoder = new TextDecoder("utf-8");
-        let buffer = "";
-        
         const BATCH_SIZE = 5000;
-        let currentBatch = [];
-        let startRow = 1; 
-        let headersKnown = false;
-        let headers = ["_id"];
-        let baseSheetName = collection;
+        let collState = {};
+        if (!isMultiMode && queriesToFetch.length > 0) {
+            collState[queriesToFetch[0].collection] = { currentBatch: [], startRow: 1, headersKnown: false, headers: ["_id"] };
+        }
 
-        while (!isSyncCancelled) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
+        // Wait for the stream fetch to complete while handling chunks
+        await sendWsRequest(fetchAction, fetchBody, async (doc) => {
+            if (isSyncCancelled) return;
             
-            let lines = buffer.split("\n");
-            buffer = lines.pop(); 
-            
-            for (let line of lines) {
-                if (line.trim()) {
-                    const doc = JSON.parse(line);
-                    if (doc._error) throw new Error(doc._error);
-                    currentBatch.push(doc);
-                    totalFetched++;
-                }
+            const docCol = doc._collection || (queriesToFetch[0] ? queriesToFetch[0].collection : "");
+            if (!collState[docCol]) {
+                collState[docCol] = { currentBatch: [], startRow: 1, headersKnown: false, headers: ["_id"] };
             }
             
-            while (currentBatch.length >= BATCH_SIZE) {
-                const chunkToProcess = currentBatch.slice(0, BATCH_SIZE);
-                currentBatch = currentBatch.slice(BATCH_SIZE);
+            if (doc._collection) {
+                delete doc._collection;
+            }
+            
+            collState[docCol].currentBatch.push(doc);
+            totalFetched++;
+            
+            // Process batch if large enough
+            let state = collState[docCol];
+            if (state.currentBatch.length >= BATCH_SIZE) {
+                const chunkToProcess = state.currentBatch.slice(0, BATCH_SIZE);
+                state.currentBatch = state.currentBatch.slice(BATCH_SIZE);
                 
-                if (!headersKnown) {
+                if (!state.headersKnown) {
                     const hs = new Set(["_id"]);
                     chunkToProcess.forEach(r => Object.keys(r).forEach(k => hs.add(k)));
-                    headers = Array.from(hs);
-                    headersKnown = true;
+                    state.headers = Array.from(hs);
+                    state.headersKnown = true;
+                    if (isMultiMode) await ensureTargetSheet(docCol);
                 }
-                updateProgress(
-                    `Rendering ${totalFetched - currentBatch.length} / ${expectedTotal} records...`,
-                    ((totalFetched - currentBatch.length) / expectedTotal) * 100
-                );
-                startRow = await appendDataToSheet(baseSheetName, chunkToProcess, headers, startRow);
                 
-                // Yield to garbage collector and UI renderer to prevent browser crash
-                await new Promise(resolve => setTimeout(resolve, 300));
+                updateProgress(`Rendering ${docCol}...`, null);
+                state.startRow = await appendDataToSheet(docCol, chunkToProcess, state.headers, state.startRow);
             }
-        }
+        });
 
-        if (currentBatch.length > 0) {
-            if (!headersKnown) {
-                const hs = new Set(["_id"]);
-                currentBatch.forEach(r => Object.keys(r).forEach(k => hs.add(k)));
-                headers = Array.from(hs);
+        for (const colName in collState) {
+            let state = collState[colName];
+            if (state.currentBatch.length > 0) {
+                if (!state.headersKnown) {
+                    const hs = new Set(["_id"]);
+                    state.currentBatch.forEach(r => Object.keys(r).forEach(k => hs.add(k)));
+                    state.headers = Array.from(hs);
+                    if (isMultiMode) await ensureTargetSheet(colName);
+                }
+                updateProgress(`Rendering final ${colName} records...`, null);
+                state.startRow = await appendDataToSheet(colName, state.currentBatch, state.headers, state.startRow);
             }
-            updateProgress(
-                `Rendering final ${currentBatch.length} records...`,
-                (totalFetched / expectedTotal) * 100
-            );
-            startRow = await appendDataToSheet(baseSheetName, currentBatch, headers, startRow);
-        }
-
-        // If totalFetched is 0, we still clear the sheet
-        if (totalFetched === 0) {
-            await Excel.run(async (context) => {
-                const sheet = context.workbook.worksheets.getActiveWorksheet();
-                try { sheet.getUsedRange().clear(); await context.sync(); } catch(e){}
-            });
+            
+            if (state.startRow === 1 && !isMultiMode) {
+                await Excel.run(async (context) => {
+                    const sheet = context.workbook.worksheets.getActiveWorksheet();
+                    try { sheet.getUsedRange().clear(); await context.sync(); } catch(e){}
+                });
+            }
         }
 
         await refreshSchemaBar();
@@ -566,7 +672,7 @@ async function runSyncAndFetch() {
             isSyncCancelled
                 ? `Sync stopped by user. Loaded ${totalFetched} records.`
                 : (totalFetched > 0 
-                    ? `Sync process complete! Loaded ${totalFetched} records into the sheet(s).`
+                    ? `Sync process complete! Loaded ${totalFetched} records.`
                     : `Sync complete. No records matched the query.`),
             totalFetched, inserted, updated
         );
@@ -580,13 +686,11 @@ async function runSyncAndFetch() {
         if (actionContainer) actionContainer.classList.remove("hidden");
         const stopContainer = document.getElementById("btn-stop-container");
         if (stopContainer) stopContainer.classList.add("hidden");
-        // Restore auto-calculation and events
         await Excel.run(async (context) => {
             context.runtime.enableEvents = true;
             context.workbook.application.calculationMode = Excel.CalculationMode.automatic;
             await context.sync();
         }).catch(() => {});
-        
         setLoading(false);
         hideProgress();
     }
@@ -1054,45 +1158,7 @@ async function writeSchemaToSheet(fields) {
 // GUI QUERY BUILDER
 // ============================================================
 
-/**
- * Called when user clicks ＋ Add Condition.
- * Auto-fetches schema first if none is loaded, so the field is always a dropdown.
- */
-async function handleAddCondition() {
-    const btn = document.getElementById('btn-add-condition');
 
-    // If schema is already known, just add the row immediately
-    if (currentSchema.filter(f => f !== '_id').length > 0) {
-        addCondition();
-        return;
-    }
-
-    // No schema yet — try to fetch it silently from the selected collection
-    const collection = collectionSelect.value;
-    if (!collection) {
-        showError('Select a collection first so we can load its fields.');
-        return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = 'Loading fields...';
-
-    try {
-        const res  = await fetchWithTimeout(`${API_BASE}/schema?collection=${encodeURIComponent(collection)}`);
-        const data = await res.json();
-        if (res.ok && data.fields && data.fields.length > 0) {
-            currentSchema = data.fields;
-            renderSchemaBar(data.fields);
-        }
-    } catch (_) {
-        // Silently fall back — addCondition will use free-text if schema still empty
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '&#xFF0B; Add Condition';
-    }
-
-    addCondition();
-}
 
 /** Switch between 'builder' and 'json' tabs */
 function switchQueryMode(mode) {
@@ -1115,80 +1181,272 @@ function switchQueryMode(mode) {
     }
 }
 
-/** Toggle AND / OR logic */
-function setGuiLogic(logic) {
-    guiLogic = logic;
-    document.getElementById('btn-logic-and').classList.toggle('active', logic === 'and');
-    document.getElementById('btn-logic-or').classList.toggle('active',  logic === 'or');
+// ============================================================================
+// GUI QUERY BUILDER (MULTI-BLOCK)
+// ============================================================================
+
+let queryBlocks = [
+    {
+        id: 0,
+        isPrimary: true,
+        collection: "",
+        schema: [],
+        logic: 'and',
+        conditions: [],
+        conditionCounter: 0
+    }
+];
+let nextBlockId = 1;
+
+function getBlock(id) {
+    return queryBlocks.find(b => b.id === parseInt(id));
+}
+
+function renderBlocks() {
+    const container = document.getElementById('blocks-container');
+    if (!container) return;
+    container.innerHTML = '';
+    
+    queryBlocks.forEach((block, index) => {
+        const blockEl = document.createElement('div');
+        blockEl.className = 'border-border-width border-black p-3 bg-surface-container-low neo-shadow-sm space-y-3 relative group';
+        blockEl.dataset.blockId = block.id;
+        
+        let headerHtml = '';
+        if (block.isPrimary) {
+            headerHtml = `
+                <div class="flex justify-between items-center">
+                    <span class="font-label-mono text-[11px] uppercase">Match (Primary Collection)</span>
+                    <div class="flex border-2 border-black overflow-hidden">
+                        <button class="btn-logic btn-logic-and px-3 py-1 text-[10px] font-bold ${block.logic==='and'?'bg-white text-black':'bg-surface-variant text-on-surface-variant'} border-r-2 border-black" data-block="${block.id}" data-logic="and">ALL (AND)</button>
+                        <button class="btn-logic btn-logic-or px-3 py-1 text-[10px] font-bold ${block.logic==='or'?'bg-white text-black':'bg-surface-variant text-on-surface-variant'}" data-block="${block.id}" data-logic="or">ANY (OR)</button>
+                    </div>
+                </div>
+            `;
+        } else {
+            const options = Array.from(collectionSelect.options).map(opt => `<option value="${opt.value}" ${opt.value === block.collection ? 'selected' : ''}>${opt.text}</option>`).join('');
+            headerHtml = `
+                <div class="flex justify-between items-center mb-2">
+                    <select class="block-collection-select bg-surface-container-lowest border-2 border-black p-1 text-[11px] font-bold font-label-mono uppercase outline-none" data-block="${block.id}">
+                        ${options}
+                    </select>
+                    <button class="btn-remove-block text-error hover:scale-110 transition-transform" data-block="${block.id}" title="Remove Collection Query">
+                        <span class="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="font-label-mono text-[11px] uppercase">Match</span>
+                    <div class="flex border-2 border-black overflow-hidden">
+                        <button class="btn-logic btn-logic-and px-3 py-1 text-[10px] font-bold ${block.logic==='and'?'bg-white text-black':'bg-surface-variant text-on-surface-variant'} border-r-2 border-black" data-block="${block.id}" data-logic="and">ALL</button>
+                        <button class="btn-logic btn-logic-or px-3 py-1 text-[10px] font-bold ${block.logic==='or'?'bg-white text-black':'bg-surface-variant text-on-surface-variant'}" data-block="${block.id}" data-logic="or">ANY</button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        let conditionsHtml = '<div class="conditions-list space-y-2 mt-2">';
+        block.conditions.forEach(cond => {
+            const schemaFields = block.schema.filter(f => f !== '_id');
+            let fieldInput = '';
+            if (schemaFields.length > 0) {
+                const fOpts = schemaFields.map(f => `<option value="${f}" ${f === cond.field ? 'selected' : ''}>${f}</option>`).join('');
+                fieldInput = `<select class="cond-field bg-surface-container-lowest border-2 border-black p-1 font-data-field w-full outline-none" data-block="${block.id}" data-cond="${cond.id}">${fOpts}</select>`;
+            } else {
+                fieldInput = `<input type="text" class="cond-field bg-surface-container-lowest border-2 border-black p-1 font-data-field w-full outline-none" data-block="${block.id}" data-cond="${cond.id}" value="${cond.field}" placeholder="field">`;
+            }
+            
+            const opOpts = GUI_OPERATORS.map(o => `<option value="${o.value}" ${o.value === cond.op ? 'selected' : ''}>${o.label}</option>`).join('');
+            const opInput = `<select class="cond-op bg-surface-container-lowest border-2 border-black p-1 font-label-mono text-[10px] w-full outline-none" data-block="${block.id}" data-cond="${cond.id}">${opOpts}</select>`;
+            
+            const selectedOpDef = GUI_OPERATORS.find(o => o.value === cond.op);
+            const valInput = selectedOpDef && selectedOpDef.hasValue 
+                ? `<input type="text" class="cond-val bg-surface-container-lowest border-2 border-black p-1 font-data-field w-full outline-none" data-block="${block.id}" data-cond="${cond.id}" value="${cond.value}" placeholder="value">`
+                : `<div class="w-full text-[10px] text-on-surface-variant italic py-1 px-2">no value</div>`;
+                
+            conditionsHtml += `
+                <div class="flex gap-2 items-center bg-background p-2 border-2 border-black">
+                    <div class="flex-grow min-w-[30%]">${fieldInput}</div>
+                    <div class="flex-grow min-w-[30%]">${opInput}</div>
+                    <div class="flex-grow min-w-[30%]">${valInput}</div>
+                    <button class="btn-remove-cond text-error hover:scale-110 transition-transform" data-block="${block.id}" data-cond="${cond.id}">
+                        <span class="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                </div>
+            `;
+        });
+        conditionsHtml += '</div>';
+        
+        const addBtnHtml = `
+            <button class="btn-add-cond w-full bg-white border-2 border-black p-2 neo-shadow-sm flex items-center justify-center gap-2 hover:-translate-y-1 transition-transform mt-3 outline-none" data-block="${block.id}">
+                <span class="material-symbols-outlined text-primary-container text-[16px]">add_circle</span>
+                <span class="font-label-mono text-[10px] uppercase font-bold">Add Condition</span>
+            </button>
+        `;
+        
+        blockEl.innerHTML = headerHtml + conditionsHtml + addBtnHtml;
+        container.appendChild(blockEl);
+    });
+
     updateQueryFromGui();
 }
 
-/** Add a new condition row to the builder */
-function addCondition(field = '', op = 'eq', value = '') {
-    const id = ++conditionCounter;
-    const row = document.createElement('div');
-    row.className = 'condition-row';
-    row.dataset.id = id;
-
-    // Field: dropdown if schema known, else free-text input
-    let fieldHtml;
-    const schemaFields = currentSchema.filter(f => f !== '_id');
-    if (schemaFields.length > 0) {
-        const opts = schemaFields
-            .map(f => `<option value="${f}"${f === field ? ' selected' : ''}>${f}</option>`)
-            .join('');
-        fieldHtml = `<select class="cond-field cond-select">${opts}</select>`;
-    } else {
-        fieldHtml = `<input class="cond-field cond-input" type="text" placeholder="field" value="${field}">`;
+function addQueryBlock() {
+    // Determine a default collection (either current or first available)
+    let defaultCol = collectionSelect.value;
+    if (collectionSelect.options.length > 0 && !defaultCol) {
+        defaultCol = collectionSelect.options[0].value;
     }
 
-    // Operator dropdown
-    const opOpts = GUI_OPERATORS
-        .map(o => `<option value="${o.value}"${o.value === op ? ' selected' : ''}>${o.label}</option>`)
-        .join('');
-
-    const selectedOp = GUI_OPERATORS.find(o => o.value === op);
-    const hideValue  = selectedOp && !selectedOp.hasValue ? 'hidden' : '';
-
-    row.innerHTML = `
-        ${fieldHtml}
-        <select class="cond-op cond-select">${opOpts}</select>
-        <input  class="cond-value cond-input ${hideValue}" type="text" placeholder="value" value="${value}">
-        <button class="btn-remove-cond" title="Remove">&#x2715;</button>
-    `;
-
-    // Operator change: toggle value input visibility
-    row.querySelector('.cond-op').addEventListener('change', e => {
-        const def = GUI_OPERATORS.find(o => o.value === e.target.value);
-        row.querySelector('.cond-value').classList.toggle('hidden', !def.hasValue);
-        updateQueryFromGui();
-    });
-    row.querySelector('.btn-remove-cond').addEventListener('click', () => {
-        row.remove();
-        _updateConditionCount();
-        updateQueryFromGui();
-    });
-    row.querySelector('.cond-field').addEventListener('change', updateQueryFromGui);
-    row.querySelector('.cond-field').addEventListener('input',  updateQueryFromGui);
-    row.querySelector('.cond-value').addEventListener('input',  updateQueryFromGui);
-
-    document.getElementById('conditions-list').appendChild(row);
-    _updateConditionCount();
-    updateQueryFromGui();
+    const newBlock = {
+        id: nextBlockId++,
+        isPrimary: false,
+        collection: defaultCol,
+        schema: [],
+        logic: 'and',
+        conditions: [],
+        conditionCounter: 0
+    };
+    queryBlocks.push(newBlock);
+    renderBlocks();
+    
+    // Auto-fetch schema for the new block
+    if (defaultCol) {
+        handleBlockCollectionChange(newBlock.id, defaultCol);
+    }
 }
 
-/** Update the condition count label */
-function _updateConditionCount() {
-    const n = document.getElementById('conditions-list').children.length;
-    const el = document.getElementById('condition-count');
-    el.textContent = n === 0 ? 'fetch all' : n === 1 ? '1 condition' : `${n} conditions`;
+async function handleBlockCollectionChange(blockId, newCol) {
+    const block = getBlock(blockId);
+    if (!block) return;
+    block.collection = newCol;
+    block.schema = []; // reset
+    renderBlocks();
+    
+    if (!newCol) return;
+    
+    try {
+        const res = await fetchWithTimeout(`${API_BASE}/schema?collection=${encodeURIComponent(newCol)}`);
+        const data = await res.json();
+        if (res.ok && data.fields) {
+            block.schema = data.fields;
+            block.conditions.forEach(cond => {
+                if (data.fields.length > 0 && !data.fields.includes(cond.field)) {
+                    cond.field = data.fields.find(f => f !== '_id') || '_id';
+                }
+            });
+            renderBlocks();
+        }
+    } catch (e) {
+        console.error("Auto-fetch schema failed for block", e);
+    }
 }
 
-/** Rebuild GUI filter to a MongoDB query object */
+function addConditionToBlock(blockId) {
+    const block = getBlock(blockId);
+    if (!block) return;
+    
+    let defaultField = '';
+    const schemaFields = block.schema.filter(f => f !== '_id');
+    if (schemaFields.length > 0) defaultField = schemaFields[0];
+
+    block.conditions.push({
+        id: ++block.conditionCounter,
+        field: defaultField,
+        op: 'eq',
+        value: ''
+    });
+    
+    renderBlocks();
+}
+
+function bindBlocksContainerEvents() {
+    const container = document.getElementById('blocks-container');
+    if (!container) return;
+    
+    container.addEventListener('click', (e) => {
+        const btnLogic = e.target.closest('.btn-logic');
+        if (btnLogic) {
+            const block = getBlock(btnLogic.dataset.block);
+            if (block) {
+                block.logic = btnLogic.dataset.logic;
+                renderBlocks();
+            }
+            return;
+        }
+        
+        const btnAddCond = e.target.closest('.btn-add-cond');
+        if (btnAddCond) {
+            addConditionToBlock(btnAddCond.dataset.block);
+            return;
+        }
+        
+        const btnRemoveCond = e.target.closest('.btn-remove-cond');
+        if (btnRemoveCond) {
+            const block = getBlock(btnRemoveCond.dataset.block);
+            if (block) {
+                block.conditions = block.conditions.filter(c => c.id !== parseInt(btnRemoveCond.dataset.cond));
+                renderBlocks();
+            }
+            return;
+        }
+        
+        const btnRemoveBlock = e.target.closest('.btn-remove-block');
+        if (btnRemoveBlock) {
+            queryBlocks = queryBlocks.filter(b => b.id !== parseInt(btnRemoveBlock.dataset.block));
+            renderBlocks();
+            return;
+        }
+    });
+
+    container.addEventListener('change', (e) => {
+        const colSelect = e.target.closest('.block-collection-select');
+        if (colSelect) {
+            handleBlockCollectionChange(colSelect.dataset.block, colSelect.value);
+            return;
+        }
+        
+        const condField = e.target.closest('.cond-field');
+        const condOp = e.target.closest('.cond-op');
+        const condVal = e.target.closest('.cond-val');
+        
+        if (condField) {
+            const block = getBlock(condField.dataset.block);
+            const cond = block.conditions.find(c => c.id === parseInt(condField.dataset.cond));
+            cond.field = condField.value;
+            updateQueryFromGui();
+        } else if (condOp) {
+            const block = getBlock(condOp.dataset.block);
+            const cond = block.conditions.find(c => c.id === parseInt(condOp.dataset.cond));
+            cond.op = condOp.value;
+            renderBlocks();
+        } else if (condVal) {
+            const block = getBlock(condVal.dataset.block);
+            const cond = block.conditions.find(c => c.id === parseInt(condVal.dataset.cond));
+            cond.value = condVal.value;
+            updateQueryFromGui();
+        }
+    });
+
+    container.addEventListener('input', (e) => {
+        const condField = e.target.closest('.cond-field');
+        const condVal = e.target.closest('.cond-val');
+        
+        if (condField && condField.tagName === 'INPUT') {
+            const block = getBlock(condField.dataset.block);
+            const cond = block.conditions.find(c => c.id === parseInt(condField.dataset.cond));
+            cond.field = condField.value;
+            updateQueryFromGui();
+        } else if (condVal && condVal.tagName === 'INPUT') {
+            const block = getBlock(condVal.dataset.block);
+            const cond = block.conditions.find(c => c.id === parseInt(condVal.dataset.cond));
+            cond.value = condVal.value;
+            updateQueryFromGui();
+        }
+    });
+}
+
+/** Rebuild GUI filter to a MongoDB query object or array of objects */
 function buildGuiQuery() {
-    const rows = document.querySelectorAll('.condition-row');
-    if (rows.length === 0) return {};
-
     const parseVal = v => {
         if (v === 'true')  return true;
         if (v === 'false') return false;
@@ -1196,75 +1454,84 @@ function buildGuiQuery() {
         return (!isNaN(n) && v !== '') ? n : v;
     };
 
-    const conditions = [];
-    rows.forEach(row => {
-        const field = row.querySelector('.cond-field').value.trim();
-        const op    = row.querySelector('.cond-op').value;
-        const raw   = (row.querySelector('.cond-value').value || '').trim();
-        if (!field) return;
+    let queries = [];
+    queryBlocks.forEach(block => {
+        const conditions = [];
+        block.conditions.forEach(c => {
+            const field = (c.field || '').trim();
+            const op    = c.op;
+            const raw   = (c.value || '').trim();
+            if (!field) return;
 
-        let cond = {};
-        switch (op) {
-            case 'eq':      cond = { [field]: parseVal(raw) }; break;
-            case 'ne':      cond = { [field]: { $ne:  parseVal(raw) } }; break;
-            case 'gt':      cond = { [field]: { $gt:  parseVal(raw) } }; break;
-            case 'gte':     cond = { [field]: { $gte: parseVal(raw) } }; break;
-            case 'lt':      cond = { [field]: { $lt:  parseVal(raw) } }; break;
-            case 'lte':     cond = { [field]: { $lte: parseVal(raw) } }; break;
-            case 'regex':   cond = { [field]: { $regex: raw, $options: 'i' } }; break;
-            case 'starts':  cond = { [field]: { $regex: `^${raw}`, $options: 'i' } }; break;
-            case 'in':      cond = { [field]: { $in:  raw.split(',').map(v => parseVal(v.trim())) } }; break;
-            case 'nin':     cond = { [field]: { $nin: raw.split(',').map(v => parseVal(v.trim())) } }; break;
-            case 'exists':  cond = { [field]: { $exists: true  } }; break;
-            case 'nexists': cond = { [field]: { $exists: false } }; break;
+            let cond = {};
+            switch (op) {
+                case 'eq':      cond = { [field]: parseVal(raw) }; break;
+                case 'ne':      cond = { [field]: { $ne:  parseVal(raw) } }; break;
+                case 'gt':      cond = { [field]: { $gt:  parseVal(raw) } }; break;
+                case 'gte':     cond = { [field]: { $gte: parseVal(raw) } }; break;
+                case 'lt':      cond = { [field]: { $lt:  parseVal(raw) } }; break;
+                case 'lte':     cond = { [field]: { $lte: parseVal(raw) } }; break;
+                case 'regex':   cond = { [field]: { $regex: raw, $options: 'i' } }; break;
+                case 'starts':  cond = { [field]: { $regex: `^${raw}`, $options: 'i' } }; break;
+                case 'in':      cond = { [field]: { $in:  raw.split(',').map(v => parseVal(v.trim())) } }; break;
+                case 'nin':     cond = { [field]: { $nin: raw.split(',').map(v => parseVal(v.trim())) } }; break;
+                case 'exists':  cond = { [field]: { $exists: true  } }; break;
+                case 'nexists': cond = { [field]: { $exists: false } }; break;
+            }
+            conditions.push(cond);
+        });
+
+        let query = {};
+        if (conditions.length === 1) {
+            query = conditions[0];
+        } else if (conditions.length > 1) {
+            query = block.logic === 'and' ? { $and: conditions } : { $or: conditions };
         }
-        conditions.push(cond);
+        
+        const col = block.isPrimary ? (collectionSelect.value || "") : block.collection;
+        queries.push({
+            collection: col,
+            filters: query
+        });
     });
 
-    if (conditions.length === 0) return {};
-    if (conditions.length === 1) return conditions[0];
-    return guiLogic === 'and' ? { $and: conditions } : { $or: conditions };
+    if (queries.length === 1) return queries[0].filters;
+    return queries;
 }
 
-/** Sync GUI → queryInput textarea + JSON preview */
+/** Sync GUI -> JSON preview and JSON inputs */
 function updateQueryFromGui() {
-    const query   = buildGuiQuery();
-    const isEmpty = Object.keys(query).length === 0;
-    const pretty  = isEmpty ? '' : JSON.stringify(query, null, 2);
-
-    queryInput.value = pretty;
-    document.getElementById('query-preview-code').textContent = isEmpty ? '{}  // fetch all' : pretty;
-    validateQuerySyntax();
+    const output = buildGuiQuery();
+    
+    if (queryBlocks.length === 1) {
+        // Single block mode (backwards compatible)
+        const isEmpty = Object.keys(output).length === 0;
+        const pretty  = isEmpty ? '' : JSON.stringify(output, null, 2);
+        queryInput.value = pretty;
+        document.getElementById('query-preview-code').textContent = isEmpty ? '{}  // fetch all' : pretty;
+        validateQuerySyntax();
+    } else {
+        // Multi-block mode
+        const pretty = JSON.stringify(output, null, 2);
+        document.getElementById('multi-input').value = pretty;
+        document.getElementById('query-preview-code').textContent = pretty;
+        validateMultiSyntax();
+    }
     saveSheetState();
 }
 
-/** When schema updates, rebuild condition field dropdowns in-place */
+/** When primary schema updates, rebuild primary block */
 function refreshConditionFields() {
-    const schemaFields = currentSchema.filter(f => f !== '_id');
-    if (schemaFields.length === 0) return;
-    document.querySelectorAll('.condition-row').forEach(row => {
-        const fieldEl = row.querySelector('.cond-field');
-        if (fieldEl.tagName === 'INPUT') {
-            // Replace free-text with dropdown now that we have schema
-            const cur  = fieldEl.value;
-            const opts = schemaFields
-                .map(f => `<option value="${f}"${f === cur ? ' selected' : ''}>${f}</option>`)
-                .join('');
-            const sel  = document.createElement('select');
-            sel.className = 'cond-field cond-select';
-            sel.innerHTML = opts;
-            sel.addEventListener('change', updateQueryFromGui);
-            fieldEl.replaceWith(sel);
-        } else {
-            // Already a select — update options keeping current selection
-            const cur  = fieldEl.value;
-            const opts = schemaFields
-                .map(f => `<option value="${f}"${f === cur ? ' selected' : ''}>${f}</option>`)
-                .join('');
-            fieldEl.innerHTML = opts;
-        }
-    });
-    updateQueryFromGui();
+    if (queryBlocks[0]) {
+        queryBlocks[0].schema = [...currentSchema];
+        queryBlocks[0].collection = collectionSelect.value;
+        queryBlocks[0].conditions.forEach(cond => {
+            if (currentSchema.length > 0 && !currentSchema.includes(cond.field)) {
+                cond.field = currentSchema.find(f => f !== '_id') || '_id';
+            }
+        });
+        renderBlocks();
+    }
 }
 
 // --- Helpers ---
