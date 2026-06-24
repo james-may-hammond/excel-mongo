@@ -1,3 +1,8 @@
+/**
+ * File: taskpane.js
+ * Description: Main logic for the Excel taskpane Add-in. Handles UI interactions, Excel API calls, and backend communication.
+ * Dependencies: Office.js
+ */
 // Local dev uses fe/config.js. Production builds generate this value from ADDIN_API_BASE.
 let API_BASE = (window.EXCEL_MONGO_CONFIG && window.EXCEL_MONGO_CONFIG.apiBase) || window.location.origin;
 

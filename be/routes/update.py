@@ -1,3 +1,8 @@
+"""
+Module: update.py
+Description: API route to update a single document in a collection with conflict detection.
+Dependencies: fastapi, motor, pydantic, bson
+"""
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from be.db import get_db

@@ -1,3 +1,8 @@
+"""
+Module: main.py
+Description: Entry point for the FastAPI backend application. Registers all REST and WebSocket routes.
+Dependencies: fastapi, motor, uvicorn
+"""
 from pathlib import Path
 
 from fastapi import FastAPI

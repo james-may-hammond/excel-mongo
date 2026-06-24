@@ -1,3 +1,8 @@
+"""
+Module: port_to_gas.py
+Description: Script to port the application code to Google Apps Script (GAS) format.
+Dependencies: os, re
+"""
 import os
 import re
 

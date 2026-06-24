@@ -1,3 +1,8 @@
+"""
+Module: create.py
+Description: API route to explicitly create a new collection in the database.
+Dependencies: fastapi, motor, pydantic
+"""
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from motor.core import AgnosticDatabase

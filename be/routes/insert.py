@@ -1,3 +1,8 @@
+"""
+Module: insert.py
+Description: API route to insert a single document into a collection.
+Dependencies: fastapi, motor, pydantic
+"""
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from be.db import get_db

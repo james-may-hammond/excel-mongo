@@ -1,3 +1,8 @@
+"""
+Module: collections.py
+Description: API route to list all collections in the connected MongoDB database.
+Dependencies: fastapi, motor
+"""
 from fastapi import APIRouter, HTTPException, Depends
 from be.db import get_db
 from motor.core import AgnosticDatabase

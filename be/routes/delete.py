@@ -1,3 +1,8 @@
+"""
+Module: delete.py
+Description: API route for bulk deleting documents by their IDs.
+Dependencies: fastapi, motor, pydantic, bson
+"""
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List

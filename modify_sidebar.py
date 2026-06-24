@@ -1,3 +1,8 @@
+"""
+Module: modify_sidebar.py
+Description: Script to modify the sidebar HTML/UI for the deployment/build process.
+Dependencies: re, os, bs4
+"""
 import os
 import re
 

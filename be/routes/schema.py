@@ -1,3 +1,8 @@
+"""
+Module: schema.py
+Description: API route to infer and retrieve the schema of a MongoDB collection.
+Dependencies: fastapi, motor
+"""
 from fastapi import APIRouter, HTTPException, Query, Depends
 from be.db import get_db
 from motor.core import AgnosticDatabase

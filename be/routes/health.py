@@ -1,3 +1,8 @@
+"""
+Module: health.py
+Description: Health check API route to verify the service is running.
+Dependencies: fastapi
+"""
 from fastapi import APIRouter, Header, HTTPException
 from be.db import client_cache
 from motor.motor_asyncio import AsyncIOMotorClient

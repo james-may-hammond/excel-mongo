@@ -1,3 +1,8 @@
+"""
+Module: modify_sidebar_safe.py
+Description: A safer version of the sidebar modification script with error handling and backups.
+Dependencies: re, os, shutil, bs4
+"""
 import os
 import re
 

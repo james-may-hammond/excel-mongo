@@ -1,3 +1,8 @@
+/**
+ * File: build-package.js
+ * Description: Build script to package the frontend or backend assets.
+ * Dependencies: fs, path, child_process
+ */
 const fs = require("fs");
 const path = require("path");
 

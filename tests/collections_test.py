@@ -1,3 +1,8 @@
+"""
+Module: collections_test.py
+Description: Unit tests for the collections API route.
+Dependencies: pytest, httpx
+"""
 import pytest
 from httpx import AsyncClient
 

@@ -1,3 +1,8 @@
+"""
+Module: stream_fetch.py
+Description: API route for streaming documents from a collection to handle large datasets.
+Dependencies: fastapi, motor, pydantic, json
+"""
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel

@@ -1,3 +1,8 @@
+"""
+Module: fetch.py
+Description: API route to fetch documents from a collection with pagination.
+Dependencies: fastapi, motor, pydantic
+"""
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from be.db import get_db

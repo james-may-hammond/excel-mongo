@@ -1,3 +1,8 @@
+"""
+Module: ws.py
+Description: WebSocket connection manager and event router for real-time Excel-Mongo synchronization.
+Dependencies: fastapi, motor, bson, json
+"""
 import asyncio
 import base64
 import json

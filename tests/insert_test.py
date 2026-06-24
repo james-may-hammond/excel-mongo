@@ -1,3 +1,8 @@
+"""
+Module: insert_test.py
+Description: Unit tests for the single document insertion API route.
+Dependencies: pytest, httpx
+"""
 import pytest
 from httpx import AsyncClient
 

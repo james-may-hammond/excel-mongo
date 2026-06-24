@@ -1,3 +1,8 @@
+"""
+Module: db.py
+Description: Handles MongoDB connection initialization, caching, and dependency injection.
+Dependencies: fastapi, motor
+"""
 from fastapi import Header, HTTPException
 from motor.core import AgnosticDatabase
 from motor.motor_asyncio import AsyncIOMotorClient

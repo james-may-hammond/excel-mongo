@@ -1,3 +1,8 @@
+"""
+Module: bulk.py
+Description: API routes for bulk inserting and bulk updating documents in MongoDB.
+Dependencies: fastapi, motor, pydantic, pymongo, bson
+"""
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from be.db import get_db

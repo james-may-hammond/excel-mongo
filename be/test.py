@@ -1,3 +1,8 @@
+"""
+Module: test.py
+Description: Simple test script for backend functionality.
+Dependencies: None
+"""
 import requests
 
 url = "https://127.0.0.1:8000/create_collection"
