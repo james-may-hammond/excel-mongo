@@ -6,9 +6,10 @@ Dependencies: fastapi, motor, uvicorn
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from starletter.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from be.routes.bulk import router as bulk_router
 from be.routes.collections import router as collections_router
@@ -38,10 +39,30 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             
         return response
 
+class LimitUploadSizeMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, max_upload_size: int):
+        super().__init__(app)
+        self.max_upload_size = max_upload_size
+
+    async def dispatch(self, request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length:
+            if int(content_length) > self.max_upload_size:
+                return JSONResponse(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    content={"detail": f"Payload too large. Max size is {self.max_upload_size / 1024 / 1024}MB."}
+                )
+        return await call_next(request)
+
+is_production = os.getenv("ENVIRONMENT") == "production"
 app = FastAPI(
     title="excel-mongo connector",
-    version="1.1.0"
+    version="1.1.0",
+    docs_url=None if is_production else "/docs",
+    redoc_url=None if is_production else "/redoc",
+    openapi_url=None if is_production else "/openapi.json"
 )
+
 frontend_urls_env = os.getenv("FRONTEND_URLS", "https://localhost:3000")
 allowed_origins = [url.strip() for url in frontend_urls_env.split(",") if url.strip()]
 app.add_middleware(
@@ -67,6 +88,7 @@ app.include_router(auth_router)
 
 app.include_router(ws_router)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(LimitUploadSizeMiddleware, max_upload_size=52428800)
 
 @app.get("/")
 async def root():
