@@ -3,6 +3,7 @@ Module: main.py
 Description: Entry point for the FastAPI backend application. Registers all REST and WebSocket routes.
 Dependencies: fastapi, motor, uvicorn
 """
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -25,14 +26,14 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 
 app = FastAPI(
     title="excel-mongo connector",
-    version="1.0.0"
+    version="1.1.0"
 )
-
-# Enable CORS for Office Add-in environments (including Excel Online)
+frontend_urls_env = os.getenv("FRONTEND_URLS", "https://localhost:3000")
+allowed_origins = [url.strip() for url in frontend_urls_env.split(",") if url.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -47,7 +48,7 @@ app.include_router(stream_fetch_router)
 app.include_router(bulk_router)
 app.include_router(delete_router)
 app.include_router(create_router)
-app.include_router(auth_router)l
+app.include_router(auth_router)
 
 app.include_router(ws_router)
 
@@ -57,3 +58,4 @@ async def root():
         "service": "excel-mongo connector",
         "status": "running"
     }
+
