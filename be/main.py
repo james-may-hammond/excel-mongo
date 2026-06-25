@@ -19,6 +19,7 @@ from be.routes.schema import router as schema_router
 from be.routes.stream_fetch import router as stream_fetch_router
 from be.routes.update import router as update_router
 from be.ws import router as ws_router
+from be.routes.auth import router as auth_router
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
@@ -46,6 +47,7 @@ app.include_router(stream_fetch_router)
 app.include_router(bulk_router)
 app.include_router(delete_router)
 app.include_router(create_router)
+app.include_router(auth_router)l
 
 app.include_router(ws_router)
 

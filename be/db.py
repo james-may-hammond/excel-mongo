@@ -3,19 +3,38 @@ Module: db.py
 Description: Handles MongoDB connection initialization, caching, and dependency injection.
 Dependencies: fastapi, motor
 """
+
+import json
 from fastapi import Header, HTTPException
 from motor.core import AgnosticDatabase
 from motor.motor_asyncio import AsyncIOMotorClient
 
+from be.routes.auth import cipher_suite
+
+
 client_cache = {}
 
-async def get_db(x_mongo_uri: str = Header(None), x_mongo_db: str = Header(None)) -> AgnosticDatabase:
-    if not x_mongo_uri or not x_mongo_db:
+async def get_db(authorization: str = Header(None)) -> AgnosticDatabase:
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=401,
-            detail="Missing X-Mongo-URI or X-Mongo-DB headers. Please login in the Add-in."
+            detail="Missing or invalid Authorization header. Please login in the Add-in."
         )
-    return await get_ws_db(x_mongo_uri, x_mongo_db)
+    
+    token = authorization.replace("Bearer ", "")
+    try:
+        decrypted_bytes = cipher_suite.decrypt(token.encode('utf-8'))
+        payload = json.loads(decrypted_bytes.decode('utf-8'))
+        uri = payload["uri"]
+        db_name = payload["db_name"]
+        
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token. Please log in again."
+        )
+
+    return await get_ws_db(uri, db_name)
 
 async def get_ws_db(uri: str, db_name: str) -> AgnosticDatabase:
     if not uri or not db_name:

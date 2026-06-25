@@ -6,8 +6,7 @@
 // Local dev uses fe/config.js. Production builds generate this value from ADDIN_API_BASE.
 let API_BASE = (window.EXCEL_MONGO_CONFIG && window.EXCEL_MONGO_CONFIG.apiBase) || window.location.origin;
 
-let currentMongoUri = "";
-let currentMongoDb = "";
+let currentToken = "";
 
 // WebSocket Manager
 let wsSocket = null;
@@ -22,7 +21,7 @@ function connectWebSocket() {
         
         let wsProtocol = window.location.protocol === 'https:' || API_BASE.startsWith('https') ? 'wss://' : 'ws://';
         let wsHost = API_BASE.replace('http://', '').replace('https://', '');
-        let wsUrl = `${wsProtocol}${wsHost}/ws?uri=${encodeURIComponent(currentMongoUri)}&db_name=${encodeURIComponent(currentMongoDb)}`;
+        let wsUrl = `${wsProtocol}${wsHost}/ws?token=${encodeURIComponent(currentToken)}`;
         
         wsSocket = new WebSocket(wsUrl);
         
@@ -95,8 +94,7 @@ class WsResponse {
 
 function getAuthHeaders(existingHeaders = {}) {
     return {
-        "X-Mongo-URI": currentMongoUri,
-        "X-Mongo-DB": currentMongoDb,
+        "Authorization": `Bearer ${currentToken}`,
         ...existingHeaders
     };
 }
@@ -184,8 +182,7 @@ Office.onReady(async (info) => {
         Office.context.document.settings.saveAsync();
 
         // Restore credentials
-        currentMongoUri = Office.context.document.settings.get("MongoUri") || "";
-        currentMongoDb = Office.context.document.settings.get("MongoDb") || "";
+        currentToken = Office.context.document.settings.get("MongoToken") || "";
         
         const savedApiBase = Office.context.document.settings.get("ApiBase");
         if (savedApiBase) {
@@ -205,7 +202,7 @@ Office.onReady(async (info) => {
             }
         });
         
-        if (currentMongoUri && currentMongoDb) {
+        if (currentToken) {
             document.getElementById('login-view').classList.add('hidden');
             document.getElementById('app-view').classList.remove('hidden');
             await initApp();
@@ -1619,20 +1616,24 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     loader.classList.remove('hidden');
     document.getElementById('btn-login').disabled = true;
     
-    currentMongoUri = uri;
-    currentMongoDb = dbName;
-    
     try {
-        const res = await fetch(`${API_BASE}/health`, {
-            headers: getAuthHeaders()
+        const res = await fetch(`${API_BASE}/auth/connect`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ uri, db_name: dbName })
         });
+        
+        const data = await res.json();
         if (!res.ok) {
-            const data = await res.json();
             throw new Error(data.detail || "Connection failed.");
         }
         
-        Office.context.document.settings.set("MongoUri", uri);
-        Office.context.document.settings.set("MongoDb", dbName);
+        currentToken = data.token;
+        Office.context.document.settings.set("MongoToken", currentToken);
+        
+        Office.context.document.settings.remove("MongoUri"); 
+        Office.context.document.settings.remove("MongoDb");
+
         if (useUserApiBase && userApiBase) {
             Office.context.document.settings.set("ApiBase", API_BASE);
         } else {
