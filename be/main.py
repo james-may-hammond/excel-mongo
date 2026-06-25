@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starletter.middleware.base import BaseHTTPMiddleware
 
 from be.routes.bulk import router as bulk_router
 from be.routes.collections import router as collections_router
@@ -23,6 +24,19 @@ from be.ws import router as ws_router
 from be.routes.auth import router as auth_router
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+
+        if os.getenv("ENVIRONMENT") == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            
+        return response
 
 app = FastAPI(
     title="excel-mongo connector",
@@ -50,7 +64,9 @@ app.include_router(delete_router)
 app.include_router(create_router)
 app.include_router(auth_router)
 
+
 app.include_router(ws_router)
+app.add_middleware(SecurityHeadersMiddleware)
 
 @app.get("/")
 async def root():
