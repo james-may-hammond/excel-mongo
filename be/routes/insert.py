@@ -6,7 +6,6 @@ Dependencies: fastapi, motor, pydantic
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from be.db import get_db
-from motor.core import AgnosticDatabase
 
 router = APIRouter()
 class InsertionRequest(BaseModel):
@@ -15,7 +14,7 @@ class InsertionRequest(BaseModel):
 
 
 @router.post("/insert", status_code=status.HTTP_201_CREATED)
-async def insert(request: InsertionRequest, db: AgnosticDatabase = Depends(get_db)):
+async def insert(request: InsertionRequest, db = Depends(get_db)):
     try:
         collection = db[request.collection]
         doc = request.data.copy()

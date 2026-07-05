@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from be.db import get_db
-from motor.core import AgnosticDatabase
 import json
 import asyncio
 from bson import ObjectId
@@ -32,7 +31,7 @@ class FetchRequest(BaseModel):
     limit: int = 0
 
 @router.post("/stream_fetch")
-async def stream_fetch(request: FetchRequest, db: AgnosticDatabase = Depends(get_db)):
+async def stream_fetch(request: FetchRequest, db = Depends(get_db)):
     collection = db[request.collection]
     
     async def generate():

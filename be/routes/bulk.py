@@ -6,7 +6,6 @@ Dependencies: fastapi, motor, pydantic, pymongo, bson
 from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel
 from be.db import get_db
-from motor.core import AgnosticDatabase
 from bson import ObjectId
 from pymongo import UpdateOne
 from typing import List
@@ -22,7 +21,7 @@ class BulkUpdateRequest(BaseModel):
     data: List[dict]
 
 @router.post("/bulk_insert", status_code=status.HTTP_201_CREATED)
-async def bulk_insert(request: BulkInsertRequest, db: AgnosticDatabase = Depends(get_db)):
+async def bulk_insert(request: BulkInsertRequest, db = Depends(get_db)):
     try:
         collection = db[request.collection]
         docs = []
@@ -40,7 +39,7 @@ async def bulk_insert(request: BulkInsertRequest, db: AgnosticDatabase = Depends
         raise HTTPException(status_code=501, detail=str(e))
 
 @router.post("/bulk_update")
-async def bulk_update(request: BulkUpdateRequest, db: AgnosticDatabase = Depends(get_db)):
+async def bulk_update(request: BulkUpdateRequest, db = Depends(get_db)):
     try:
         collection = db[request.collection]
         

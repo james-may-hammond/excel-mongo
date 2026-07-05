@@ -6,7 +6,6 @@ Dependencies: fastapi, motor, pydantic, bson
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from be.db import get_db
-from motor.core import AgnosticDatabase
 from bson import ObjectId
 
 router = APIRouter()
@@ -17,7 +16,7 @@ class UpdateRequest(BaseModel):
     id: str
 
 @router.post("/update")
-async def update(request: UpdateRequest, db: AgnosticDatabase = Depends(get_db)):
+async def update(request: UpdateRequest, db = Depends(get_db)):
     collection = db[request.collection]
     try:
         obj_id = ObjectId(request.id)

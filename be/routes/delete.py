@@ -7,7 +7,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List
 from be.db import get_db
-from motor.core import AgnosticDatabase
 from bson import ObjectId
 
 class BulkDeleteRequest(BaseModel):
@@ -16,7 +15,7 @@ class BulkDeleteRequest(BaseModel):
 
 router = APIRouter()
 @router.post("/bulk_delete")
-async def bulk_delete(requests: BulkDeleteRequest, db: AgnosticDatabase = Depends(get_db)):
+async def bulk_delete(requests: BulkDeleteRequest, db = Depends(get_db)):
     try:
         collection = db[requests.collection]
 

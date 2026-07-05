@@ -6,7 +6,6 @@ Dependencies: fastapi, motor, pydantic
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from be.db import get_db
-from motor.core import AgnosticDatabase
 
 router = APIRouter()
 class FetchRequest(BaseModel):
@@ -15,7 +14,7 @@ class FetchRequest(BaseModel):
 
 
 @router.post("/fetch")
-async def fetch(request: FetchRequest, db: AgnosticDatabase = Depends(get_db)):
+async def fetch(request: FetchRequest, db = Depends(get_db)):
     try:
         collection = db[request.collection]
 

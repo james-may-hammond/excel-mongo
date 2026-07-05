@@ -182,7 +182,7 @@ Office.onReady(async (info) => {
         Office.context.document.settings.saveAsync();
 
         // Restore credentials
-        currentToken = Office.context.document.settings.get("MongoToken") || "";
+        currentToken = Office.context.document.settings.get("FinnotoToken") || "";
         
         const savedApiBase = Office.context.document.settings.get("ApiBase");
         if (savedApiBase) {
@@ -1592,13 +1592,12 @@ function showSuccess(msg, fetched = 0, inserted = 0, updated = 0) {
 
 // Login Handler
 document.getElementById('btn-login').addEventListener('click', async () => {
-    const uri = document.getElementById('mongo-uri-input').value.trim();
-    const dbName = document.getElementById('mongo-db-input').value.trim();
+    const pastedToken = document.getElementById('mongo-uri-input').value.trim();
     const errEl = document.getElementById('login-error');
     const loader = document.getElementById('login-loader');
     
-    if (!uri || !dbName) {
-        errEl.textContent = "Please fill in both fields.";
+    if (!pastedToken) {
+        errEl.textContent = "Please paste your Finnoto Bearer Token.";
         errEl.classList.remove('hidden');
         return;
     }
@@ -1620,7 +1619,7 @@ document.getElementById('btn-login').addEventListener('click', async () => {
         const res = await fetch(`${API_BASE}/auth/connect`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ uri, db_name: dbName })
+            body: JSON.stringify({ token: pastedToken })
         });
         
         const data = await res.json();
@@ -1629,11 +1628,8 @@ document.getElementById('btn-login').addEventListener('click', async () => {
         }
         
         currentToken = data.token;
-        Office.context.document.settings.set("MongoToken", currentToken);
+        Office.context.document.settings.set("FinnotoToken", currentToken);
         
-        Office.context.document.settings.remove("MongoUri"); 
-        Office.context.document.settings.remove("MongoDb");
-
         if (useUserApiBase && userApiBase) {
             Office.context.document.settings.set("ApiBase", API_BASE);
         } else {

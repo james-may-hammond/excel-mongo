@@ -163,18 +163,14 @@
         </header>
         <div class="space-y-6">
             <div>
-                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Connection String (URI)</label>
-                <input type="password" id="mongo-uri-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="mongodb+srv://..." />
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Finnoto Bearer Token</label>
+                <input type="password" id="mongo-uri-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="eyJhbG..." />
             </div>
             <div>
-                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Database Name</label>
-                <input type="text" id="mongo-db-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="my_database" />
-            </div>
-            <div>
-                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Backend Configuration</label>
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Proxy Configuration</label>
                 <div class="flex items-center gap-3 mb-3">
                     <input type="checkbox" id="use-custom-backend-checkbox" class="w-5 h-5 border-2 border-black accent-[#FFD300]" />
-                    <label for="use-custom-backend-checkbox" class="font-label-mono text-label-mono uppercase text-on-surface-variant cursor-pointer">Use local / custom server</label>
+                    <label for="use-custom-backend-checkbox" class="font-label-mono text-label-mono uppercase text-on-surface-variant cursor-pointer">Use local / custom proxy server</label>
                 </div>
                 <div id="custom-backend-container" class="hidden">
                     <input type="text" id="api-base-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="http://localhost:8000" />

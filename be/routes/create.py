@@ -5,7 +5,6 @@ Dependencies: fastapi, motor, pydantic
 """
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from motor.core import AgnosticDatabase
 from be.db import get_db
 
 router = APIRouter()
@@ -16,7 +15,7 @@ class CreateCollectionRequest(BaseModel):
 @router.post("/create_collection")
 async def create_collection(
     request: CreateCollectionRequest,
-    db: AgnosticDatabase = Depends(get_db)
+    db = Depends(get_db)
 ):
     try:
         # Explicitly create the collection

@@ -12,7 +12,6 @@ from bson import ObjectId
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from be.db import get_ws_db
-from be.routes.auth import cipher_suite
 
 # Existing Routers
 from be.routes.bulk import (
@@ -67,9 +66,7 @@ manager = ConnectionManager()
 async def websocket_endpoint(websocket: WebSocket, token: str):
     await manager.connect(websocket)
     try:
-        decrypted_bytes = cipher_suite.decrypt(token.encode('utf-8'))
-        payload = json.loads(decrypted_bytes.decode('utf-8'))
-        db = await get_ws_db(payload["uri"], payload["db_name"])
+        db = await get_ws_db(token)
     except Exception as e:
         await manager.send_response(websocket, "auth", "error", error="Invalid token or connection failed")
         await websocket.close()

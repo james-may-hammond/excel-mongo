@@ -5,11 +5,10 @@ Dependencies: fastapi, motor
 """
 from fastapi import APIRouter, HTTPException, Depends
 from be.db import get_db
-from motor.core import AgnosticDatabase
 router = APIRouter()
 
 @router.get("/collections")
-async def collections(db: AgnosticDatabase = Depends(get_db)):
+async def collections(db = Depends(get_db)):
     try:
         collections = await db.list_collection_names()
         return {

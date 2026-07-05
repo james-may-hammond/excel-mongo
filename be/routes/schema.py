@@ -5,12 +5,11 @@ Dependencies: fastapi, motor
 """
 from fastapi import APIRouter, HTTPException, Query, Depends
 from be.db import get_db
-from motor.core import AgnosticDatabase
 
 router = APIRouter()
 
 @router.get("/schema")
-async def get_schema(collection: str = Query(...), db: AgnosticDatabase = Depends(get_db)):
+async def get_schema(collection: str = Query(...), db = Depends(get_db)):
     try:
         col = db[collection]
         total_count = await col.estimated_document_count()
