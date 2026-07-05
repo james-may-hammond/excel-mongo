@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from be.routes.bulk import router as bulk_router
@@ -89,6 +90,8 @@ app.include_router(auth_router)
 app.include_router(ws_router)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(LimitUploadSizeMiddleware, max_upload_size=52428800)
+
+app.mount("/fe", StaticFiles(directory=str(ROOT_DIR / "fe")), name="fe")
 
 @app.get("/")
 async def root():

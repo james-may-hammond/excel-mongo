@@ -56,7 +56,7 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def send_response(self, websocket: WebSocket, request_id: str, status: str, data: dict = None, error: str = None):
-         response = {"requestID": request_id, "status": status}
+         response = {"requestId": request_id, "status": status}
          if data is not None: response["data"] = data
          if error is not None: response["error"] = error
          await websocket.send_text(json.dumps(response))

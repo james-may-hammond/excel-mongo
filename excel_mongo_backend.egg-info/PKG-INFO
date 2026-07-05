@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: excel-mongo-backend
+Version: 1.0.0
+Summary: FastAPI backend for Excel-Mongo add-in
+Requires-Python: >=3.9
+Requires-Dist: fastapi==0.138.0
+Requires-Dist: uvicorn==0.49.0
+Requires-Dist: python-dotenv==1.2.2
+Requires-Dist: websockets
+Requires-Dist: motor==3.7.1
+Requires-Dist: pymongo==4.17.0
+Requires-Dist: dnspython==2.8.0
+Requires-Dist: pydantic==2.13.4
+Requires-Dist: httpx==0.28.1
+Requires-Dist: starlette==1.2.1
+Requires-Dist: cryptography>=41.0.0
