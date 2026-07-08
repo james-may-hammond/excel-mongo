@@ -242,10 +242,6 @@ async function initApp() {
 
     // Main buttons
     btnRun.addEventListener('click', runSyncAndFetch);
-    const btnDelete = document.getElementById('btn-delete');
-    if (btnDelete) {
-        btnDelete.addEventListener('click', runDeleteSelected);
-    }
 
     // Boot sequence
     await checkApiHealth();
@@ -346,7 +342,7 @@ async function ensureTargetSheet(collection) {
     }).catch(console.error);
 }
 
-// Check if FastAPI is running and connected to MongoDB
+// Check if the Finnoto Proxy backend is reachable
 async function checkApiHealth() {
     try {
         updateStatus("checking", "Checking API...");
@@ -357,9 +353,8 @@ async function checkApiHealth() {
             try {
                 await connectWebSocket();
                 isApiOnline = true;
-                updateStatus("online", "Connected to Mongo");
+                updateStatus("online", "Connected to Finnoto");
                 btnRun.disabled = false;
-                if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = false;
             } catch (wsErr) {
                 throw new Error("WebSocket connection failed");
             }
@@ -370,7 +365,6 @@ async function checkApiHealth() {
         isApiOnline = false;
         updateStatus("offline", "API Offline");
         btnRun.disabled = true;
-        if (document.getElementById('btn-delete')) document.getElementById('btn-delete').disabled = true;
         const msg = err.name === "AbortError"
             ? "Connection timed out. Make sure ./run.sh is running in your terminal."
             : "Backend API is offline. Run ./run.sh in your terminal first.";
@@ -378,7 +372,7 @@ async function checkApiHealth() {
     }
 }
 
-// Load MongoDB Collections into selector dropdown
+// Load Finnoto report endpoints into the selector dropdown
 async function loadCollections() {
     if (!isApiOnline) return;
     
@@ -393,23 +387,26 @@ async function loadCollections() {
         if (res.ok && data.collections) {
             collectionSelect.innerHTML = "";
             if (data.collections.length === 0) {
-                collectionSelect.innerHTML = '<option value="">(No collections found)</option>';
+                collectionSelect.innerHTML = '<option value="">(No reports available)</option>';
             } else {
-                data.collections.forEach(colName => {
+                data.collections.forEach(item => {
+                    // Backend now returns { key, label } objects
+                    const key   = typeof item === 'object' ? item.key   : item;
+                    const label = typeof item === 'object' ? item.label : item;
                     const opt = document.createElement("option");
-                    opt.value = colName;
-                    opt.textContent = colName;
+                    opt.value = key;
+                    opt.textContent = label;
                     collectionSelect.appendChild(opt);
                 });
                 collectionSelect.disabled = false;
                 btnImportSchema.disabled = false;
             }
         } else {
-            throw new Error(data.detail || "Failed to load collections");
+            throw new Error(data.detail || "Failed to load reports");
         }
     } catch (err) {
-        showError("Failed to fetch MongoDB collections: " + err.message);
-        collectionSelect.innerHTML = '<option value="">Error loading collections</option>';
+        showError("Failed to fetch Finnoto reports: " + err.message);
+        collectionSelect.innerHTML = '<option value="">Error loading reports</option>';
     }
 }
 
@@ -498,7 +495,7 @@ async function runSyncAndFetch() {
     if (btnStopContainer) btnStopContainer.classList.remove("hidden");
     if (btnStop) {
         btnStop.disabled = false;
-        btnStop.querySelector(".btn-text").textContent = "Stop Sync";
+        btnStop.querySelector(".btn-text").textContent = "Stop Fetch";
         btnStop.onclick = () => {
             isSyncCancelled = true;
             if (activeAbortController) activeAbortController.abort();
@@ -522,7 +519,8 @@ async function runSyncAndFetch() {
         } catch (e) {}
     }
 
-    updateProgress("Reading Excel data...", 0);
+    // Finnoto is read-only — skip write-back phase, go straight to fetch
+    updateProgress("Connecting to Finnoto...", 0);
 
     try {
         // Suspend auto-calculation and events for extreme performance boost
@@ -531,76 +529,6 @@ async function runSyncAndFetch() {
             context.workbook.application.calculationMode = Excel.CalculationMode.manual;
             await context.sync();
         }).catch(() => {});
-
-        // Local syncing is bypassed in multi-mode for safety
-        if (!isMultiMode && queriesToFetch.length > 0) {
-            const rawSheetData = await getSheetData();
-            const syncPayload = parseSheetData(rawSheetData);
-            const primaryCol = queriesToFetch[0].collection;
-
-            if (syncPayload.inserts.length > 0 && currentSchema.length === 0) {
-                showError("Cannot insert: no schema found in the sheet. Click '⬇ Schema' to import first.");
-                setLoading(false);
-                hideProgress();
-                return;
-            }
-            
-            let conflicts = [];
-
-            if (syncPayload.inserts.length > 0 || syncPayload.updates.length > 0) {
-                const chunkSize = 1000;
-                const totalTasks = syncPayload.inserts.length + syncPayload.updates.length;
-                let completedTasks = 0;
-                
-                for (let i = 0; i < syncPayload.inserts.length; i += chunkSize) {
-                    if (isSyncCancelled) break;
-                    const chunk = syncPayload.inserts.slice(i, i + chunkSize);
-                    updateProgress(`Bulk inserting ${completedTasks + chunk.length} / ${totalTasks}...`, ((completedTasks + chunk.length) / totalTasks) * 100);
-                    const res = await fetchWithTimeout(`${API_BASE}/bulk_insert`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ collection: primaryCol, data: chunk })
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.detail || "Bulk insert failed");
-                    inserted += data.inserted || 0;
-                    completedTasks += chunk.length;
-                }
-
-                for (let i = 0; i < syncPayload.updates.length; i += chunkSize) {
-                    if (isSyncCancelled) break;
-                    const chunk = syncPayload.updates.slice(i, i + chunkSize);
-                    updateProgress(`Bulk updating ${completedTasks + chunk.length} / ${totalTasks}...`, ((completedTasks + chunk.length) / totalTasks) * 100);
-                    const res = await fetchWithTimeout(`${API_BASE}/bulk_update`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ collection: primaryCol, data: chunk })
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.detail || "Bulk update failed");
-                    updated += data.updated || 0;
-                    if (data.conflicts) conflicts.push(...data.conflicts);
-                    completedTasks += chunk.length;
-                }
-
-                if (conflicts.length > 0) {
-                    await Excel.run(async (context) => {
-                        const sheet = context.workbook.worksheets.getActiveWorksheet();
-                        conflicts.forEach(c => {
-                            if (c._rowIndex !== undefined) {
-                                const range = sheet.getRangeByIndexes(c._rowIndex, 0, 1, currentSchema.length || 10);
-                                range.format.fill.color = "#FFCCCC";
-                            }
-                        });
-                        await context.sync();
-                    });
-                    showError(`${conflicts.length} conflict(s) detected. Conflicting rows are red. Sync again to overwrite with server data.`);
-                    setLoading(false);
-                    hideProgress();
-                    return;
-                }
-            }
-        }
 
         updateProgress("Connecting to fetch stream...", 0);
         let fetchAction = isMultiMode ? `multi_stream_fetch` : `stream_fetch`;
@@ -672,11 +600,11 @@ async function runSyncAndFetch() {
 
         showSuccess(
             isSyncCancelled
-                ? `Sync stopped by user. Loaded ${totalFetched} records.`
+                ? `Fetch stopped by user. Loaded ${totalFetched} records.`
                 : (totalFetched > 0 
-                    ? `Sync process complete! Loaded ${totalFetched} records.`
-                    : `Sync complete. No records matched the query.`),
-            totalFetched, inserted, updated
+                    ? `Fetch complete! Loaded ${totalFetched} records from Finnoto.`
+                    : `Fetch complete. No records matched the query.`),
+            totalFetched, 0, 0
         );
     } catch (error) {
         if (error.name === "AbortError" || isSyncCancelled) {
@@ -698,176 +626,6 @@ async function runSyncAndFetch() {
     }
 }
 
-// --- Delete Selected Functionality ---
-async function runDeleteSelected() {
-    const collection = collectionSelect.value;
-    if (!collection) {
-        showError("Please select a database collection first.");
-        return;
-    }
-
-    if (!currentSchema || currentSchema.length === 0) {
-        showError("No schema loaded. Please load data or click '⬇ Schema' first to ensure we can map IDs.");
-        return;
-    }
-
-    const idIndex = currentSchema.indexOf("_id");
-    if (idIndex === -1) {
-        showError("Could not find the '_id' column in the current schema. Cannot delete without IDs.");
-        return;
-    }
-
-    const btnDelete = document.getElementById('btn-delete');
-    const deleteText = btnDelete.querySelector(".btn-text");
-    const deleteSpinner = btnDelete.querySelector(".btn-spinner");
-
-    deleteText.textContent = "Deleting...";
-    deleteSpinner.classList.remove("hidden");
-    btnDelete.disabled = true;
-    hideFeedback();
-
-    try {
-        let selectedIds = [];
-        let rowsToClear = [];
-
-        await Excel.run(async (context) => {
-            const sheet = context.workbook.worksheets.getActiveWorksheet();
-            const selectedRange = context.workbook.getSelectedRange();
-            selectedRange.load(["rowIndex", "rowCount"]);
-            await context.sync();
-
-            const startRow = selectedRange.rowIndex;
-            const rowCount = selectedRange.rowCount;
-
-            // Load just the _id column for the selected rows
-            const idRange = sheet.getRangeByIndexes(startRow, idIndex, rowCount, 1);
-            idRange.load("values");
-            await context.sync();
-
-            idRange.values.forEach((row, i) => {
-                const idVal = row[0];
-                if (idVal && String(idVal).trim() !== "" && String(idVal).trim() !== "_id") {
-                    selectedIds.push(String(idVal).trim());
-                    rowsToClear.push(startRow + i);
-                }
-            });
-        });
-
-        if (selectedIds.length === 0) {
-            showError("No valid records selected. Make sure you select cells belonging to rows with an '_id'.");
-            return;
-        }
-
-        const confirmDelete = await customConfirm(`Are you sure you want to delete ${selectedIds.length} record(s)? This cannot be undone.`);
-        if (!confirmDelete) {
-            showSuccess("Delete cancelled.", 0, 0, 0);
-            return;
-        }
-
-        updateProgress("Deleting from server...", 50);
-
-        const res = await fetchWithTimeout(`${API_BASE}/bulk_delete`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ collection, ids: selectedIds })
-        });
-        const data = await res.json();
-
-        if (!res.ok) throw new Error(data.detail || "Bulk delete failed");
-
-        updateProgress("Clearing rows from sheet...", 90);
-
-        await Excel.run(async (context) => {
-            const sheet = context.workbook.worksheets.getActiveWorksheet();
-            for (let rIndex of rowsToClear) {
-                sheet.getRangeByIndexes(rIndex, 0, 1, currentSchema.length).clear();
-            }
-            await context.sync();
-        });
-
-        showSuccess(`Successfully deleted ${data.deleted_count || selectedIds.length} record(s).`, 0, 0, 0);
-
-    } catch (error) {
-        showError("Delete failed: " + error.message);
-    } finally {
-        deleteText.textContent = "Delete Selected";
-        deleteSpinner.classList.add("hidden");
-        btnDelete.disabled = false;
-        hideProgress();
-    }
-}
-
-// Custom Confirm Dialog for Office.js
-function customConfirm(message) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.style.position = 'fixed';
-        overlay.style.top = '0';
-        overlay.style.left = '0';
-        overlay.style.width = '100%';
-        overlay.style.height = '100%';
-        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
-        overlay.style.display = 'flex';
-        overlay.style.alignItems = 'center';
-        overlay.style.justifyContent = 'center';
-        overlay.style.zIndex = '9999';
-
-        const dialog = document.createElement('div');
-        dialog.style.backgroundColor = 'var(--color-surface, #fff)';
-        dialog.style.padding = '20px';
-        dialog.style.borderRadius = '8px';
-        dialog.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-        dialog.style.maxWidth = '85%';
-        dialog.style.textAlign = 'center';
-
-        const text = document.createElement('p');
-        text.textContent = message;
-        text.style.marginBottom = '20px';
-        text.style.color = 'var(--color-text, #333)';
-        text.style.fontWeight = '500';
-
-        const btnContainer = document.createElement('div');
-        btnContainer.style.display = 'flex';
-        btnContainer.style.gap = '10px';
-        btnContainer.style.justifyContent = 'center';
-
-        const btnCancel = document.createElement('button');
-        btnCancel.textContent = 'Cancel';
-        btnCancel.style.padding = '8px 16px';
-        btnCancel.style.border = '1px solid var(--color-border, #ccc)';
-        btnCancel.style.borderRadius = '4px';
-        btnCancel.style.background = 'transparent';
-        btnCancel.style.cursor = 'pointer';
-        btnCancel.style.flex = '1';
-
-        const btnOk = document.createElement('button');
-        btnOk.textContent = 'Delete';
-        btnOk.style.padding = '8px 16px';
-        btnOk.style.border = '1px solid #E02424';
-        btnOk.style.borderRadius = '4px';
-        btnOk.style.backgroundColor = '#E02424';
-        btnOk.style.color = '#fff';
-        btnOk.style.cursor = 'pointer';
-        btnOk.style.flex = '1';
-
-        btnCancel.onclick = () => {
-            document.body.removeChild(overlay);
-            resolve(false);
-        };
-
-        btnOk.onclick = () => {
-            document.body.removeChild(overlay);
-            resolve(true);
-        };
-
-        btnContainer.appendChild(btnCancel);
-        btnContainer.appendChild(btnOk);
-        dialog.appendChild(text);
-        dialog.appendChild(btnContainer);
-        overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
-    });
-}
 
 // Read sheet values using Office.js
 async function getSheetData() {
@@ -1658,90 +1416,6 @@ function showError(msg) {
     feedbackMessage.textContent = typeof msg === 'object' ? JSON.stringify(msg) : msg;
     feedbackPanel.classList.remove("hidden");
 }
-
-// New Collection UI Logic
-document.getElementById('btn-new-collection').addEventListener('click', () => {
-    document.getElementById('new-collection-container').classList.remove('hidden');
-    document.getElementById('new-collection-input').focus();
-});
-
-document.getElementById('btn-cancel-collection').addEventListener('click', () => {
-    document.getElementById('new-collection-container').classList.add('hidden');
-    document.getElementById('new-collection-input').value = "";
-});
-
-document.getElementById('btn-create-collection').addEventListener('click', async () => {
-    const input = document.getElementById('new-collection-input');
-    const schemaInput = document.getElementById('new-collection-schema');
-    const collName = input.value.trim();
-    const schemaStr = schemaInput.value.trim();
-    if (!collName) return;
-
-    let fields = schemaStr.split(',').map(s => s.trim()).filter(s => s && s !== '_id');
-    fields = ['_id', ...fields];
-
-    const createBtn = document.getElementById('btn-create-collection');
-    createBtn.textContent = "Creating...";
-    createBtn.disabled = true;
-
-    try {
-        const response = await fetch(`${API_BASE}/create_collection`, {
-            method: "POST",
-            headers: getAuthHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ collection: collName })
-        });
-
-        const data = await response.json();
-        if (response.ok) {
-            document.getElementById('new-collection-container').classList.add('hidden');
-            input.value = "";
-            if(schemaInput) schemaInput.value = "";
-            showSuccess(`Collection '${collName}' created!`);
-            
-            // Reload collections and auto-select
-            await loadCollections();
-            const select = document.getElementById("collection-select");
-            select.value = collName;
-            
-            // Create Excel sheet and write schema
-            await Excel.run(async (context) => {
-                let sheet = context.workbook.worksheets.getItemOrNullObject(collName);
-                await context.sync();
-                
-                if (sheet.isNullObject) {
-                    sheet = context.workbook.worksheets.add(collName);
-                }
-                sheet.activate();
-                sheet.getUsedRange().clear();
-                
-                const range = sheet.getRangeByIndexes(0, 0, 1, fields.length);
-                range.values = [fields];
-                
-                sheet.customProperties.add("syncCollection", collName);
-                sheet.customProperties.add("syncQuery", "{}");
-                
-                range.format.font.bold = true;
-                range.format.fill.color = "#FFD300";
-                range.format.font.color = "black";
-                range.format.borders.getItem('EdgeBottom').style = 'Continuous';
-                range.format.borders.getItem('EdgeBottom').weight = 'Thick';
-                
-                await context.sync();
-            });
-
-            // Manually trigger change to load schema
-            const event = new Event('change');
-            select.dispatchEvent(event);
-        } else {
-            showError(data.detail || "Failed to create collection");
-        }
-    } catch (e) {
-        showError(e.message);
-    } finally {
-        createBtn.textContent = "Create";
-        createBtn.disabled = false;
-    }
-});
 
 function hideFeedback() {
     feedbackPanel.classList.add("hidden");

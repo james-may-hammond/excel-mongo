@@ -11,5 +11,5 @@ router = APIRouter()
 async def health():
     return {
         "status": "ok",
-        "message": "Finnoto Proxy Server is running"
+        "message": "Finnoto Proxy is running"
     }

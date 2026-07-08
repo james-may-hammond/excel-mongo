@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>MongoDB Sync Sidebar</title>
+    <title>Finnoto Sync</title>
     <!-- Office JS SDK -->
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" type="text/javascript"></script>
 
@@ -155,7 +155,7 @@
     <!-- LOGIN VIEW -->
     <div id="login-view" class="flex flex-col flex-grow p-margin space-y-8 hidden">
         <header class="border-b-border-width border-black pb-4 mb-4 mt-4 flex justify-between items-center">
-            <h1 class="font-headline-lg text-[28px] font-black text-on-background uppercase tracking-tight">Setup Database</h1>
+            <h1 class="font-headline-lg text-[28px] font-black text-on-background uppercase tracking-tight">Connect to Finnoto</h1>
             <button class="theme-toggle px-3 py-2 bg-white dark:bg-[#FFD300] border-2 border-black neo-shadow-sm font-bold text-black uppercase text-[12px] flex items-center gap-2 transition-transform hover:-translate-y-1">
                 <span class="dark:hidden">Light Mode</span>
                 <span class="hidden dark:block">Dark Mode</span>
@@ -192,7 +192,7 @@
         <header class="bg-background border-b-border-width border-black flex justify-between items-center px-margin py-4 w-full sticky top-0 z-50">
             <div class="flex items-center gap-2">
                 <span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">database</span>
-                <h1 class="font-headline-lg text-[22px] font-black text-on-background uppercase tracking-tight">MongoDB Sync</h1>
+                <h1 class="font-headline-lg text-[22px] font-black text-on-background uppercase tracking-tight">Finnoto Sync</h1>
             </div>
             <div class="flex items-center gap-3">
                 <button class="theme-toggle px-3 py-2 bg-white dark:bg-[#FFD300] border-2 border-black neo-shadow-sm font-bold text-black uppercase text-[12px] flex items-center gap-2 transition-transform hover:-translate-y-1">
@@ -211,7 +211,7 @@
             
             <!-- Selection Section -->
             <section class="space-y-4">
-                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block">Select Collection</label>
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block">Select Report</label>
                 <div class="flex gap-gutter">
                     <div class="relative flex-grow">
                         <select id="collection-select" disabled class="w-full h-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background appearance-none cursor-pointer neo-shadow-sm">
@@ -221,24 +221,17 @@
                             <span class="material-symbols-outlined">expand_more</span>
                         </div>
                     </div>
-                    <button id="btn-import-schema" disabled class="bg-primary-container border-border-width border-black p-4 neo-shadow neo-shadow-hover flex items-center justify-center transition-all text-black disabled:opacity-50">
+                    <button id="btn-import-schema" disabled class="bg-primary-container border-border-width border-black p-4 neo-shadow neo-shadow-hover flex items-center justify-center transition-all text-black disabled:opacity-50" title="Import column headers">
                         <span class="material-symbols-outlined font-bold">download</span>
                     </button>
-                    <button id="btn-refresh-collections" class="bg-surface-variant border-border-width border-black p-4 neo-shadow neo-shadow-hover flex items-center justify-center transition-all disabled:opacity-50">
+                    <button id="btn-refresh-collections" class="bg-surface-variant border-border-width border-black p-4 neo-shadow neo-shadow-hover flex items-center justify-center transition-all disabled:opacity-50" title="Refresh list">
                         <span class="material-symbols-outlined">refresh</span>
                     </button>
-                    <button id="btn-new-collection" class="bg-primary-container border-border-width border-black p-4 neo-shadow neo-shadow-hover flex items-center justify-center transition-all text-black disabled:opacity-50" title="Create New Collection">
-                        <span class="material-symbols-outlined font-bold">add</span>
-                    </button>
                 </div>
-                <!-- Inline New Collection Input -->
-                <div id="new-collection-container" class="hidden flex flex-col gap-2 pt-2">
-                    <input type="text" id="new-collection-input" class="w-full bg-surface-container-lowest border-border-width border-black p-3 font-data-field text-on-background neo-shadow-sm focus:outline-none" placeholder="Collection name" />
-                    <input type="text" id="new-collection-schema" class="w-full bg-surface-container-lowest border-border-width border-black p-3 font-data-field text-on-background neo-shadow-sm focus:outline-none" placeholder="Schema fields (e.g. name, age, email)" />
-                    <div class="flex gap-2">
-                        <button id="btn-create-collection" class="flex-grow bg-primary-container border-border-width border-black px-4 py-2 neo-shadow neo-shadow-hover font-bold text-black uppercase text-[12px] transition-transform hover:-translate-y-1">Create</button>
-                        <button id="btn-cancel-collection" class="flex-grow bg-surface-variant border-border-width border-black px-4 py-2 neo-shadow neo-shadow-hover font-bold text-on-surface-variant uppercase text-[12px] transition-transform hover:-translate-y-1">Cancel</button>
-                    </div>
+                <!-- Read-only notice -->
+                <div class="flex items-center gap-2 opacity-70 mt-1">
+                    <span class="material-symbols-outlined text-[15px] text-on-surface-variant">lock</span>
+                    <span class="font-label-mono text-[10px] uppercase text-on-surface-variant">Finnoto data is read-only — fetch only</span>
                 </div>
             </section>
 
@@ -332,26 +325,14 @@
             <!-- Action Buttons -->
             <div id="action-buttons-container" class="pt-4 space-y-gutter">
                 <button id="btn-run" disabled class="w-full bg-primary-container border-border-width border-black p-4 font-headline-lg text-[18px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                    <span class="btn-text">Sync &amp; Fetch Data</span>
-                    <span class="material-symbols-outlined font-black btn-icon-normal">sync</span>
+                    <span class="btn-text">Fetch Data</span>
+                    <span class="material-symbols-outlined font-black btn-icon-normal">download</span>
                     <span class="btn-spinner hidden"></span>
-                </button>
-                <button id="btn-delete" disabled class="w-full bg-[#FF4444] border-border-width border-black p-4 font-headline-lg text-[18px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                    <span class="btn-text">Delete Selected</span>
-                    <span class="material-symbols-outlined font-black btn-icon-normal">delete_forever</span>
-                    <span class="btn-spinner hidden border-t-black"></span>
-                </button>
-            </div>
-            
-            <!-- Stop Button -->
-            <div id="btn-stop-container" class="pt-4 hidden">
-                <button id="btn-stop" class="w-full bg-[#F59E0B] border-border-width border-black p-4 font-headline-lg text-[18px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all">
-                    <span class="btn-text">Stop Sync</span>
-                    <span class="material-symbols-outlined font-black btn-icon-normal">stop_circle</span>
-                    <span class="btn-spinner hidden border-t-black"></span>
                 </button>
             </div>
 
+            <!-- Stop Button -->
+            <div id="btn-stop-container" class="pt-4 hidden">
             <!-- Help Accordion -->
             <details class="group border-border-width border-black bg-surface-variant neo-shadow-sm mt-4">
                 <summary class="p-4 flex items-center justify-between cursor-pointer hover:bg-surface-container transition-all list-none outline-none">
@@ -359,16 +340,18 @@
                     <span class="material-symbols-outlined group-open:rotate-180 transition-transform">expand_more</span>
                 </summary>
                 <div class="p-5 border-t-border-width border-black font-data-field text-[13px] opacity-80 space-y-4 bg-background">
-                    <p><strong>1. Fetching:</strong> Select collection, build filter, click Sync & Fetch.</p>
-                    <p><strong>2. Inserting:</strong> Import schema via ⬇, add rows below headers.</p>
-                    <p><strong>3. Updating:</strong> Modify cells in rows with _id. Sync pushes edits.</p>
+                    <p><strong>1. Connect:</strong> Paste your Finnoto Bearer token on the login screen and click Connect.</p>
+                    <p><strong>2. Select report:</strong> Pick a report from the dropdown (e.g. Employee Expenses).</p>
+                    <p><strong>3. Filter:</strong> Use the query builder or JSON tab to narrow down results.</p>
+                    <p><strong>4. Fetch:</strong> Click Fetch Data — records stream into the active sheet.</p>
+                    <p><strong>5. Schema:</strong> Click ⬇ to write column headers to the sheet without fetching data.</p>
                 </div>
             </details>
         </main>
 
         <!-- Footer Component -->
         <footer class="bg-background border-t-border-width border-black flex justify-center items-center py-5 w-full mt-auto">
-            <p class="font-label-mono text-[10px] uppercase text-on-surface-variant opacity-60">Excel-MongoDB Connector v1.0.0</p>
+            <p class="font-label-mono text-[10px] uppercase text-on-surface-variant opacity-60">Finnoto Excel Add-in v1.1.0</p>
         </footer>
     </div>
     
