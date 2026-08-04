@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Finnoto Sync</title>
+    <!-- Office JS SDK -->
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" type="text/javascript"></script>
+
+    <!-- Tailwind & Fonts -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@500;600;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <!-- Link to our CSS for the JS-generated dynamic rows -->
+    <link rel="stylesheet" href="taskpane.css">
+    <script src="config.js"></script>
+
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "background": "var(--bg)",
+                        "on-background": "var(--on-bg)",
+                        "surface-container-lowest": "var(--surface-lowest)",
+                        "surface-container-low": "var(--surface-low)",
+                        "surface-variant": "var(--surface-variant)",
+                        "surface-container": "var(--surface-container)",
+                        "on-surface-variant": "var(--on-surface-variant)",
+                        "on-surface": "var(--on-bg)",
+                        "secondary-container": "var(--secondary-container)",
+                        "on-secondary-container": "var(--on-secondary-container)",
+                        "primary-container": "var(--primary-container)",
+                        "tertiary-fixed-dim": "var(--tertiary-dim)",
+                        "on-tertiary-fixed-variant": "var(--on-tertiary-variant)",
+                        "error": "var(--error)",
+                        "error-container": "var(--error-container)"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0px",
+                        "lg": "0px",
+                        "xl": "0px",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "border-width": "2px",
+                        "unit": "4px",
+                        "margin": "14px",
+                        "gutter": "10px",
+                        "container-padding": "12px",
+                        "shadow-offset": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-xl": ["Public Sans"],
+                        "data-field": ["JetBrains Mono"],
+                        "label-mono": ["JetBrains Mono"],
+                        "headline-lg": ["Public Sans"],
+                        "body-md": ["Public Sans"]
+                    },
+                    "fontSize": {
+                        "headline-xl": ["32px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "900"}],
+                        "data-field": ["14px", {"lineHeight": "1.4", "fontWeight": "400"}],
+                        "label-mono": ["13px", {"lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "headline-lg": ["24px", {"lineHeight": "1.2", "fontWeight": "800"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "500"}]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        :root {
+            --bg: #FDFDFD;
+            --on-bg: #000000;
+            --surface-lowest: #FFFFFF;
+            --surface-low: #F0F0F0;
+            --surface-variant: #E0E0E0;
+            --surface-container: #E8E8E8;
+            --on-surface-variant: #444444;
+            --secondary-container: #F0F0F0;
+            --on-secondary-container: #000000;
+            --primary-container: #FFD300;
+            --tertiary-dim: #006670;
+            --on-tertiary-variant: #006670;
+            --error: #D32F2F;
+            --error-container: #FFCDD2;
+        }
+        html.dark {
+            --bg: #131313;
+            --on-bg: #e2e2e2;
+            --surface-lowest: #0e0e0e;
+            --surface-low: #1b1b1b;
+            --surface-variant: #353535;
+            --surface-container: #1f1f1f;
+            --on-surface-variant: #d1c6ab;
+            --secondary-container: #4a435b;
+            --on-secondary-container: #bbb1cd;
+            --primary-container: #ffd100;
+            --tertiary-dim: #00dbed;
+            --on-tertiary-variant: #004f56;
+            --error: #ffb4ab;
+            --error-container: #93000a;
+        }
+
+        .neo-shadow { box-shadow: 6px 6px 0px 0px #000000; }
+        .neo-shadow-active { box-shadow: 0px 0px 0px 0px #000000; transform: translate(6px, 6px); }
+        .neo-shadow-sm { box-shadow: 4px 4px 0px 0px #000000; }
+        .neo-shadow-hover:hover { box-shadow: 8px 8px 0px 0px #000000; transform: translate(-2px, -2px); }
+        .neo-shadow-hover:active { box-shadow: 0px 0px 0px 0px #000000; transform: translate(6px, 6px); }
+        input:focus, select:focus, textarea:focus { outline: none; background-color: var(--surface-low) !important; }
+        
+        /* Functional States overriding Tailwind */
+        .hidden { display: none !important; }
+        
+        /* Keeping JS Status Badge functionally intact but visually updated */
+        .status-badge { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.75rem; border: 2px solid black; border-radius: 9999px; }
+        .status-badge.checking { background-color: rgba(255, 211, 0, 0.2); }
+        .status-badge.checking .status-text { color: var(--primary-container); font-size: 10px; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 600;}
+        .status-badge.checking .pulse-dot { background-color: var(--primary-container); width: 8px; height: 8px; border-radius: 50%; animation: pulse 1.5s infinite alternate; }
+        
+        .status-badge.online { background-color: rgba(11, 235, 255, 0.2); }
+        .status-badge.online .status-text { color: var(--tertiary-dim); font-size: 10px; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 600;}
+        .status-badge.online .pulse-dot { background-color: var(--tertiary-dim); width: 8px; height: 8px; border-radius: 50%; animation: pulse 1.5s infinite alternate; }
+        
+        .status-badge.offline { background-color: rgba(255, 180, 171, 0.2); }
+        .status-badge.offline .status-text { color: var(--error); font-size: 10px; text-transform: uppercase; font-family: 'JetBrains Mono'; font-weight: 600;}
+        .status-badge.offline .pulse-dot { background-color: var(--error); width: 8px; height: 8px; border-radius: 50%; animation: pulse 1.5s infinite alternate; }
+
+        @keyframes pulse { 0% { opacity: 0.4; } 100% { opacity: 1; transform: scale(1.25); } }
+
+        .env-btn {
+            background: var(--surface-variant);
+            border: 2px solid #000;
+            padding: 8px 14px;
+            font-family: 'JetBrains Mono';
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            cursor: pointer;
+            box-shadow: 3px 3px 0px 0px #000;
+            transition: all 0.1s;
+        }
+        .env-btn:hover {
+            transform: translate(-1px, -1px);
+            box-shadow: 5px 5px 0px 0px #000;
+        }
+        .env-btn.env-active {
+            background: var(--primary-container);
+            color: #000;
+            box-shadow: 0px 0px 0px 0px #000;
+            transform: translate(3px, 3px);
+        }
+
+        /* Dynamic Schema Bar Tags */
+        .schema-field-tag { background-color: var(--surface-variant); border: 2px solid black; padding: 4px 8px; display: inline-flex; align-items: center; gap: 4px; font-family: 'JetBrains Mono'; font-size: 11px; color: var(--on-bg); }
+        .schema-field-tag.id-field { background-color: var(--primary-container); color: black; font-weight: 900; }
+
+        /* Spinner for buttons */
+        .btn-spinner { width: 18px; height: 18px; border: 3px solid rgba(0,0,0,0.2); border-top: 3px solid #000; border-radius: 50%; animation: spin 0.75s linear infinite; display: inline-block; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Ensure query builder JS elements match */
+        .cond-select, .cond-input { 
+            background: var(--surface-lowest); color: var(--on-bg); border: 2px solid #000; padding: 10px; font-family: 'JetBrains Mono'; font-size: 13px; font-weight: 600; box-shadow: 4px 4px 0px #000; transition: all 0.1s ease; outline: none; margin-bottom: 6px; 
+        }
+        .cond-select:focus, .cond-input:focus { border-color: var(--primary-container); box-shadow: 4px 4px 0px var(--primary-container); }
+        .btn-remove-cond { 
+            background: var(--error-container); border: 2px solid #000; color: var(--error); width: 42px; height: 42px; font-weight: 900; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 4px 4px 0px #000; transition: all 0.1s; margin-left: 8px; 
+        }
+        .btn-remove-cond:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px #000; }
+        .btn-remove-cond:active { transform: translate(4px, 4px); box-shadow: 0px 0px 0px #000; }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col border-x-border-width border-black overflow-x-hidden">
+
+    <!-- LOGIN VIEW -->
+    <div id="login-view" class="flex flex-col flex-grow p-margin space-y-8 hidden">
+        <header class="border-b-border-width border-black pb-4 mb-4 mt-4 flex justify-between items-center">
+            <h1 class="font-headline-lg text-[28px] font-black text-on-background uppercase tracking-tight">Connect to Finnoto</h1>
+            <button class="theme-toggle px-3 py-2 bg-white dark:bg-[#FFD300] border-2 border-black neo-shadow-sm font-bold text-black uppercase text-[12px] flex items-center gap-2 transition-transform hover:-translate-y-1">
+                <span class="dark:hidden">Light Mode</span>
+                <span class="hidden dark:block">Dark Mode</span>
+            </button>
+        </header>
+        <div class="space-y-6">
+            <div>
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Finnoto Bearer Token</label>
+                <input type="password" id="mongo-uri-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all" placeholder="eyJhbG..." />
+            </div>
+
+            <div>
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block mb-3">Finnoto Environment</label>
+                <div id="env-presets" class="flex flex-wrap gap-2 mb-3">
+                    <button data-env="eapi" class="env-btn env-active">eapi.finnoto.dev</button>
+                    <button data-env="abdebug" class="env-btn">abdebug.finnoto.dev</button>
+                    <button data-env="arcapi" class="env-btn">arcapi.finnoto.dev</button>
+                </div>
+                <div class="flex items-center gap-3 mb-3">
+                    <input type="checkbox" id="use-custom-backend-checkbox" class="w-5 h-5 border-2 border-black accent-[#FFD300]" />
+                    <label for="use-custom-backend-checkbox" class="font-label-mono text-label-mono uppercase text-on-surface-variant cursor-pointer">Use local / custom proxy server</label>
+                </div>
+                <div id="custom-backend-container" class="hidden">
+                    <div class="flex gap-2">
+                        <select id="custom-env-select" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all outline-none appearance-none cursor-pointer">
+                            <option value="">— select or type below —</option>
+                            <option value="https://eapi.finnoto.dev">eapi.finnoto.dev</option>
+                            <option value="https://abdebug.finnoto.dev">abdebug.finnoto.dev</option>
+                            <option value="https://arcapi.finnoto.dev">arcapi.finnoto.dev</option>
+                        </select>
+                    </div>
+                    <input type="text" id="api-base-input" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all mt-2" placeholder="https://eapi.finnoto.dev" />
+                </div>
+            </div>
+            <button id="btn-login" class="w-full bg-primary-container border-border-width border-black p-5 font-headline-lg text-[20px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all mt-8">
+                <span class="btn-text">Connect &amp; Load</span>
+                <div class="btn-loader hidden" id="login-loader">
+                    <span class="btn-spinner"></span>
+                </div>
+            </button>
+            <div id="login-error" class="hidden text-error font-bold text-[14px] mt-4 p-4 border-2 border-black bg-error-container/20"></div>
+        </div>
+    </div>
+
+    <!-- APP VIEW -->
+    <div id="app-view" class="flex flex-col flex-grow hidden">
+        <!-- TopAppBar Component -->
+        <header class="bg-background border-b-border-width border-black flex justify-between items-center px-margin py-4 w-full sticky top-0 z-50">
+            <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">database</span>
+                <h1 class="font-headline-lg text-[22px] font-black text-on-background uppercase tracking-tight">Finnoto Sync</h1>
+            </div>
+            <div class="flex items-center gap-3">
+                <button class="theme-toggle px-3 py-2 bg-white dark:bg-[#FFD300] border-2 border-black neo-shadow-sm font-bold text-black uppercase text-[12px] flex items-center gap-2 transition-transform hover:-translate-y-1">
+                    <span class="dark:hidden">Light</span>
+                    <span class="hidden dark:block">Dark</span>
+                </button>
+                <div id="connection-status" class="status-badge checking">
+                    <span class="pulse-dot"></span>
+                    <span class="status-text">Checking</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Canvas -->
+        <main class="flex-grow p-margin space-y-5">
+
+            <!-- ═══════════════════════════════════════════
+                 REPORT PICKER
+            ═══════════════════════════════════════════ -->
+            <section class="space-y-3">
+                <div class="flex justify-between items-center">
+                    <label class="font-label-mono text-label-mono uppercase text-on-surface-variant">Business Report</label>
+                    <button id="btn-refresh-reports" class="opacity-60 hover:opacity-100 transition-opacity" title="Reload report list">
+                        <span class="material-symbols-outlined text-[18px]">refresh</span>
+                    </button>
+                </div>
+
+                <!-- Search box -->
+                <div class="relative">
+                    <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] opacity-40 pointer-events-none">search</span>
+                    <input type="text" id="report-search" class="w-full bg-surface-container-lowest border-border-width border-black pl-10 pr-4 py-3 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all outline-none" placeholder="Search reports..." />
+                </div>
+
+                <!-- Report dropdown -->
+                <div class="relative">
+                    <select id="report-select" disabled class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background appearance-none cursor-pointer neo-shadow-sm">
+                        <option value="">Loading reports...</option>
+                    </select>
+                    <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                        <span class="material-symbols-outlined">expand_more</span>
+                    </div>
+                </div>
+
+                <!-- Read-only notice -->
+                <div class="flex items-center gap-2 opacity-60">
+                    <span class="material-symbols-outlined text-[14px]">lock</span>
+                    <span class="font-label-mono text-[10px] uppercase">Finnoto data is read-only — fetch only</span>
+                </div>
+            </section>
+
+            <!-- ═══════════════════════════════════════════
+                 SHEET SELECTOR  (shown after report pick)
+            ═══════════════════════════════════════════ -->
+            <section id="sheet-selector-section" class="hidden space-y-3 border-border-width border-black p-container-padding bg-surface-variant neo-shadow-sm">
+                <div class="flex justify-between items-center">
+                    <label class="font-label-mono text-label-mono uppercase text-on-surface-variant">Sheets to Fetch</label>
+                    <div class="flex gap-2">
+                        <button id="btn-select-all-sheets" class="font-label-mono text-[10px] uppercase underline opacity-60 hover:opacity-100">All</button>
+                        <span class="opacity-40">·</span>
+                        <button id="btn-deselect-all-sheets" class="font-label-mono text-[10px] uppercase underline opacity-60 hover:opacity-100">None</button>
+                    </div>
+                </div>
+                <div id="sheet-checkboxes" class="space-y-2 max-h-40 overflow-y-auto">
+                    <!-- injected dynamically -->
+                </div>
+            </section>
+
+            <!-- ═══════════════════════════════════════════
+                 DATE FILTER
+            ═══════════════════════════════════════════ -->
+            <section id="date-filter-section" class="space-y-3">
+                <label class="font-label-mono text-label-mono uppercase text-on-surface-variant block">Date Filter</label>
+
+                <!-- Preset chips -->
+                <div id="date-presets" class="flex flex-wrap gap-2">
+                    <button data-preset="today"           class="date-preset-btn">Today</button>
+                    <button data-preset="yesterday"       class="date-preset-btn">Yesterday</button>
+                    <button data-preset="week"            class="date-preset-btn">This Week</button>
+                    <button data-preset="last_week"       class="date-preset-btn">Last Week</button>
+                    <button data-preset="month"           class="date-preset-btn">This Month</button>
+                    <button data-preset="last_month"      class="date-preset-btn">Last Month</button>
+                    <button data-preset="current_quarter" class="date-preset-btn">This Qtr</button>
+                    <button data-preset="previous_quarter" class="date-preset-btn">Last Qtr</button>
+                    <button data-preset="year"            class="date-preset-btn">This Year</button>
+                    <button data-preset="current_fy"      class="date-preset-btn">Current FY</button>
+                    <button data-preset="previous_fy"     class="date-preset-btn">Prev FY</button>
+                    <button data-preset="custom"          class="date-preset-btn">Custom Range</button>
+                </div>
+
+                <!-- Custom range inputs (shown when "Custom Range" selected) -->
+                <div id="date-custom-range" class="hidden flex gap-3">
+                    <div class="flex-1">
+                        <label class="font-label-mono text-[10px] uppercase opacity-60 block mb-1">From</label>
+                        <input type="date" id="date-min" class="w-full bg-surface-container-lowest border-border-width border-black p-3 font-data-field text-on-background neo-shadow-sm focus:neo-shadow outline-none" />
+                    </div>
+                    <div class="flex-1">
+                        <label class="font-label-mono text-[10px] uppercase opacity-60 block mb-1">To</label>
+                        <input type="date" id="date-max" class="w-full bg-surface-container-lowest border-border-width border-black p-3 font-data-field text-on-background neo-shadow-sm focus:neo-shadow outline-none" />
+                    </div>
+                </div>
+            </section>
+
+            <!-- ═══════════════════════════════════════════
+                 CUSTOM FILTERS  (key → value pairs)
+            ═══════════════════════════════════════════ -->
+            <section id="custom-filters-section" class="space-y-3">
+                <div class="flex justify-between items-center">
+                    <label class="font-label-mono text-label-mono uppercase text-on-surface-variant">Report Filters <span class="lowercase italic opacity-60">(optional)</span></label>
+                    <button id="btn-add-filter" class="flex items-center gap-1 font-label-mono text-[11px] uppercase font-black bg-secondary-container border-border-width border-black px-3 py-2 neo-shadow-sm hover:-translate-y-px transition-transform">
+                        <span class="material-symbols-outlined text-[15px]">add</span> Add
+                    </button>
+                </div>
+                <div id="filters-rows" class="space-y-2">
+                    <!-- injected dynamically -->
+                </div>
+            </section>
+
+            <!-- ═══════════════════════════════════════════
+                 RECORD LIMIT
+            ═══════════════════════════════════════════ -->
+            <section class="space-y-2">
+                <div class="flex justify-between items-center">
+                    <label class="font-label-mono text-label-mono uppercase text-on-surface-variant">Record Limit</label>
+                    <span class="font-label-mono text-[11px] text-on-surface-variant italic lowercase">0 for unlimited</span>
+                </div>
+                <input id="limit-input" type="number" class="w-full bg-surface-container-lowest border-border-width border-black p-4 font-data-field text-data-field text-on-background neo-shadow-sm focus:neo-shadow transition-all outline-none" value="0" min="0" />
+            </section>
+
+            <!-- Progress -->
+            <div id="progress-text" class="hidden text-center font-label-mono text-[11px] uppercase mt-4 text-tertiary-fixed-dim">Initializing...</div>
+            <div id="progress-bar-container" class="hidden w-full h-4 bg-surface border-border-width border-black mt-2 overflow-hidden neo-shadow-sm">
+                <div id="progress-bar-fill" class="h-full bg-tertiary-fixed-dim transition-all" style="width: 0%;"></div>
+            </div>
+
+            <!-- Feedback Panel -->
+            <div id="feedback-panel" class="hidden bg-surface-variant border-border-width border-black p-4 neo-shadow-sm mt-4">
+                <div class="font-label-mono text-[11px] uppercase mb-4 opacity-70">Results</div>
+                <div class="flex gap-3 mb-4">
+                    <div class="flex-1 bg-surface-container-lowest border-border-width border-black p-3 text-center neo-shadow-sm">
+                        <div id="stat-fetched" class="font-headline-lg text-[24px] font-black text-primary-container">0</div>
+                        <div class="font-label-mono text-[9px] uppercase opacity-70 mt-1">Rows</div>
+                    </div>
+                    <div class="flex-1 bg-surface-container-lowest border-border-width border-black p-3 text-center neo-shadow-sm">
+                        <div id="stat-inserted" class="font-headline-lg text-[24px] font-black text-tertiary-fixed-dim">0</div>
+                        <div class="font-label-mono text-[9px] uppercase opacity-70 mt-1">Sheets</div>
+                    </div>
+                    <div class="flex-1 bg-surface-container-lowest border-border-width border-black p-3 text-center neo-shadow-sm">
+                        <div id="stat-updated" class="font-headline-lg text-[24px] font-black text-on-surface">0</div>
+                        <div class="font-label-mono text-[9px] uppercase opacity-70 mt-1">Cols</div>
+                    </div>
+                </div>
+                <div id="feedback-message" class="font-data-field text-[13px] bg-background border-border-width border-black p-4 mt-2 text-primary-container"></div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div id="action-buttons-container" class="pt-4 space-y-gutter">
+                <button id="btn-run" disabled class="w-full bg-primary-container border-border-width border-black p-4 font-headline-lg text-[18px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span class="btn-text">Fetch Report</span>
+                    <span class="material-symbols-outlined font-black btn-icon-normal">download</span>
+                    <span class="btn-spinner hidden"></span>
+                </button>
+            </div>
+
+            <!-- Stop Button -->
+            <div id="btn-stop-container" class="pt-4 hidden">
+                <button id="btn-stop" class="w-full bg-[#F59E0B] border-border-width border-black p-4 font-headline-lg text-[18px] font-black uppercase text-black neo-shadow neo-shadow-hover flex items-center justify-center gap-3 transition-all">
+                    <span class="btn-text">Stop Fetch</span>
+                    <span class="material-symbols-outlined font-black btn-icon-normal">stop_circle</span>
+                    <span class="btn-spinner hidden border-t-black"></span>
+                </button>
+            </div>
+
+            <!-- Help Accordion -->
+            <details class="group border-border-width border-black bg-surface-variant neo-shadow-sm mt-4">
+                <summary class="p-4 flex items-center justify-between cursor-pointer hover:bg-surface-container transition-all list-none outline-none">
+                    <span class="font-label-mono text-label-mono uppercase">How to use this Add-in</span>
+                    <span class="material-symbols-outlined group-open:rotate-180 transition-transform">expand_more</span>
+                </summary>
+                <div class="p-5 border-t-border-width border-black font-data-field text-[13px] opacity-80 space-y-4 bg-background">
+                    <p><strong>1. Connect:</strong> Paste your Finnoto Bearer token. Optionally set a custom instance URL (e.g. abdebug.finnoto.dev).</p>
+                    <p><strong>2. Pick a report:</strong> Search or scroll the report list. Select the report.</p>
+                    <p><strong>3. Select sheets:</strong> Check the sheet(s) you want. Each sheet lands in its own Excel worksheet.</p>
+                    <p><strong>4. Date &amp; Filters:</strong> Pick a date preset or a custom range. Add key→value filter pairs if needed.</p>
+                    <p><strong>5. Fetch:</strong> Click Fetch Report — data streams into Excel.</p>
+                </div>
+            </details>
+        </main>
+
+        <!-- Footer Component -->
+        <footer class="bg-background border-t-border-width border-black flex justify-center items-center py-5 w-full mt-auto">
+            <p class="font-label-mono text-[10px] uppercase text-on-surface-variant opacity-60">Finnoto Excel Add-in v1.2.0</p>
+        </footer>
+    </div>
+    
+    <script src="taskpane.js?v=6"></script>
+    <script>
+        // Micro-interactions
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                if(btn.classList.contains('neo-shadow') && !btn.disabled) {
+                    btn.classList.remove('neo-shadow');
+                    btn.classList.add('neo-shadow-active');
+                }
+            });
+            btn.addEventListener('mouseup', () => {
+                if(btn.classList.contains('neo-shadow-active')) {
+                    btn.classList.remove('neo-shadow-active');
+                    btn.classList.add('neo-shadow');
+                }
+            });
+            btn.addEventListener('mouseleave', () => {
+                if(btn.classList.contains('neo-shadow-active')) {
+                    btn.classList.remove('neo-shadow-active');
+                    btn.classList.add('neo-shadow');
+                }
+            });
+        });
+        // Theme toggling
+        document.querySelectorAll('.theme-toggle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.documentElement.classList.toggle('dark');
+            });
+        });
+    </script>
+</body>
+</html>

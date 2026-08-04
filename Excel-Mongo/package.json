@@ -1,0 +1,34 @@
+{
+  "name": "excel-mongo",
+  "version": "1.0.0",
+  "description": "- Connect to MongoDB - Select database - Select collection - Build filters from Excel - Execute filtered queries - Display query results in Excel - Show \"No Results Found\" when empty - Insert selected Excel rows into MongoDB - Update existing MongoDB records from Excel - Refresh query results - Connection health check ### Architecture Diagram ![Diagram](archdia.png)",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "start:addin": "office-addin-debugging start fe/manifest.xml --no-debug --dev-server-port 8000",
+    "stop:addin": "office-addin-debugging stop fe/manifest.xml",
+    "validate:dev": "office-addin-manifest validate fe/manifest.xml",
+    "validate:dist": "office-addin-manifest validate dist/manifest.xml",
+    "package": "node scripts/build-package.js",
+    "package:validate": "npm run package && npm run validate:dist",
+    "test": "echo \"No automated test command configured yet\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/james-may-hammond/excel-mongo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/james-may-hammond/excel-mongo/issues"
+  },
+  "homepage": "https://github.com/james-may-hammond/excel-mongo#readme",
+  "devDependencies": {
+    "office-addin-debugging": "^6.1.1",
+    "office-addin-manifest": "^2.1.5"
+  }
+}

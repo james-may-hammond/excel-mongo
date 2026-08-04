@@ -1,0 +1,13 @@
+.DS_Store
+.env
+.git
+.pytest_cache
+.venv
+be/.env
+cert.pem
+dist
+key.pem
+node_modules
+tests
+__pycache__
+*.pyc

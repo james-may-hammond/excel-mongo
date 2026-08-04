@@ -1,0 +1,55 @@
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# ========================
+# Virtual Environment
+# ========================
+.venv/
+venv/
+env/
+ENV/
+
+# ========================
+# Environment Variables
+# ========================
+.env
+be/.env
+
+# ========================
+# SSL Certificates (generated locally, never commit)
+# ========================
+cert.pem
+key.pem
+
+# ========================
+# Node / npm
+# ========================
+node_modules/
+package-lock.json
+dist/
+
+# ========================
+# macOS
+# ========================
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ========================
+# Editor / IDE
+# ========================
+.vscode/
+.idea/
+*.swp
+*~
+
+# ========================
+# Dev / Test
+# ========================
+be/seed.py
+tests/
